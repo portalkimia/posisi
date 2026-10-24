@@ -34,19 +34,19 @@
 
   <!-- TOP NAVIGATION & HEADER -->
   <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-      <div class="flex items-center justify-between h-16 gap-3">
+    <div class="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between min-h-[56px] sm:min-h-[64px] py-1.5 sm:py-2 gap-2 sm:gap-3">
         
         <!-- App Title & Badge -->
-        <div class="flex items-center gap-3">
-          <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-indigo-500 text-white flex items-center justify-center font-bold text-lg shadow-md shadow-indigo-100">
-            <i data-lucide="laptop" class="w-5 h-5"></i>
+        <div class="flex items-center gap-2 sm:gap-3 min-w-0">
+          <div class="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-indigo-500 text-white flex items-center justify-center font-bold text-sm sm:text-lg shadow-md shadow-indigo-100 flex-shrink-0">
+            <i data-lucide="laptop" class="w-4 h-4 sm:w-5 sm:h-5"></i>
           </div>
-          <div>
-            <div class="flex items-center gap-2">
-              <h1 class="font-bold text-slate-900 text-base sm:text-lg tracking-tight leading-none">TKA 2026</h1>
-              <span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
-                Alokasi Meja & Cadangan (v2.5)
+          <div class="min-w-0">
+            <div class="flex items-center gap-1.5 sm:gap-2">
+              <h1 class="font-bold text-slate-900 text-sm sm:text-lg tracking-tight leading-none truncate">TKA 2026</h1>
+              <span class="text-[10px] sm:text-xs font-semibold px-1.5 sm:px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 flex-shrink-0">
+                v2.5
               </span>
             </div>
             <p class="text-xs text-slate-600 hidden sm:block">Sinkronisasi Realtime Google Sheets 26–29 Okt</p>
@@ -55,30 +55,33 @@
 
         <!-- Navigation Tabs: Denah vs Rekap Laptop Siswa vs Overview -->
         <div class="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-medium">
-          <button id="tab-denah" class="tab-btn px-3 py-1.5 rounded-lg font-semibold bg-white text-indigo-700 shadow-sm transition-all flex items-center gap-1.5">
-            <i data-lucide="layout-grid" class="w-3.5 h-3.5"></i>
-            <span>Denah Meja</span>
+          <button id="tab-denah" class="tab-btn px-2.5 sm:px-3 py-1.5 rounded-lg font-semibold bg-white text-indigo-700 shadow-sm transition-all flex items-center gap-1 sm:gap-1.5">
+            <i data-lucide="layout-grid" class="w-3.5 h-3.5 flex-shrink-0"></i>
+            <span class="hidden sm:inline">Denah Meja</span>
+            <span class="sm:hidden text-[11px]">Denah</span>
           </button>
-          <button id="tab-tabel-laptop" class="tab-btn px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 transition-all flex items-center gap-1.5">
-            <i data-lucide="table" class="w-3.5 h-3.5"></i>
-            <span>Rekap Laptop Siswa</span>
+          <button id="tab-tabel-laptop" class="tab-btn px-2 sm:px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 transition-all flex items-center gap-1 sm:gap-1.5">
+            <i data-lucide="table" class="w-3.5 h-3.5 flex-shrink-0"></i>
+            <span class="hidden sm:inline">Rekap Siswa</span>
+            <span class="sm:hidden text-[11px]">Rekap</span>
           </button>
-          <button id="tab-rekap" class="tab-btn px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 transition-all flex items-center gap-1.5">
-            <i data-lucide="bar-chart-3" class="w-3.5 h-3.5"></i>
-            <span>Overview Ruang</span>
+          <button id="tab-rekap" class="tab-btn px-2 sm:px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 transition-all flex items-center gap-1 sm:gap-1.5">
+            <i data-lucide="bar-chart-3" class="w-3.5 h-3.5 flex-shrink-0"></i>
+            <span class="hidden sm:inline">Overview Ruang</span>
+            <span class="sm:hidden text-[11px]">Overview</span>
           </button>
         </div>
 
         <!-- Right Tools: Sync Pill, Settings & Export -->
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
           <!-- Realtime Sync Pill -->
-          <div id="sync-pill" class="flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200" title="Status sinkronisasi">
+          <div id="sync-pill" class="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-2.5 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200" title="Status sinkronisasi">
             <span id="sync-dot" class="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
-            <span id="sync-text" class="hidden md:inline">Mode Lokal / Standalone</span>
+            <span id="sync-text" class="hidden md:inline">Mode Standalone</span>
           </div>
 
           <!-- GAS Settings Button -->
-          <button id="btn-settings" class="p-2 text-slate-500 hover:text-indigo-600 hover:bg-slate-50 rounded-lg border border-slate-200 transition" title="Pengaturan Google Apps Script">
+          <button id="btn-settings" class="p-1.5 sm:p-2 text-slate-500 hover:text-indigo-600 hover:bg-slate-50 rounded-lg border border-slate-200 transition" title="Pengaturan Google Apps Script">
             <i data-lucide="settings" class="w-4 h-4"></i>
           </button>
 
@@ -97,103 +100,134 @@
   <main id="view-denah" class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 flex flex-col gap-5">
     
     <!-- ROOM CONTROLS: DATE, ROOM & SESSION SELECTOR BAR -->
-    <div class="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
+    <div class="bg-white rounded-2xl p-3 sm:p-4 border border-slate-200 shadow-sm flex flex-col gap-3">
       
-      <!-- Date Selector Pills (26-29 Okt) -->
-      <div class="flex items-center gap-2">
-        <span class="text-xs font-bold text-slate-500 uppercase tracking-wider mr-1">Tanggal:</span>
-        <div id="date-pills" class="flex bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-semibold">
-          <button class="date-btn px-2.5 py-1 rounded-lg bg-indigo-600 text-white shadow-sm" data-date="2026-10-26">26 Okt (H1)</button>
-          <button class="date-btn px-2.5 py-1 rounded-lg text-slate-600 hover:text-slate-900" data-date="2026-10-27">27 Okt (H2)</button>
-          <button class="date-btn px-2.5 py-1 rounded-lg text-slate-600 hover:text-slate-900" data-date="2026-10-28">28 Okt (H3)</button>
-          <button class="date-btn px-2.5 py-1 rounded-lg text-slate-600 hover:text-slate-900" data-date="2026-10-29">29 Okt (H4)</button>
+      <!-- Top Row: Date Selector Pills & Metrics -->
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+        
+        <!-- Date Selector Pills (26-29 Okt) -->
+        <div class="flex items-center gap-1.5 min-w-0">
+          <span class="text-[11px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider mr-1 flex-shrink-0">Tanggal:</span>
+          <div id="date-pills" class="grid grid-cols-4 sm:flex w-full sm:w-auto bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-semibold text-center gap-0.5">
+            <button class="date-btn px-1.5 sm:px-2.5 py-1 rounded-lg bg-indigo-600 text-white shadow-sm text-[11px] sm:text-xs truncate" data-date="2026-10-26">26 Okt (H1)</button>
+            <button class="date-btn px-1.5 sm:px-2.5 py-1 rounded-lg text-slate-600 hover:text-slate-900 text-[11px] sm:text-xs truncate" data-date="2026-10-27">27 Okt (H2)</button>
+            <button class="date-btn px-1.5 sm:px-2.5 py-1 rounded-lg text-slate-600 hover:text-slate-900 text-[11px] sm:text-xs truncate" data-date="2026-10-28">28 Okt (H3)</button>
+            <button class="date-btn px-1.5 sm:px-2.5 py-1 rounded-lg text-slate-600 hover:text-slate-900 text-[11px] sm:text-xs truncate" data-date="2026-10-29">29 Okt (H4)</button>
+          </div>
         </div>
+
+        <!-- Quick Room Metrics (Responsive 3-Col Card on Mobile) -->
+        <div class="grid grid-cols-3 sm:flex items-center gap-2 sm:gap-4 text-xs bg-slate-50 sm:bg-transparent p-2 sm:p-0 rounded-xl border sm:border-0 border-slate-200 text-center sm:text-left">
+          <div class="flex flex-col sm:flex-row items-center gap-0.5 sm:gap-1.5 text-slate-600">
+            <span class="w-2 h-2 rounded-full bg-indigo-500 hidden sm:inline-block"></span>
+            <span class="text-[10px] sm:text-xs text-slate-500">Terisi:</span>
+            <strong id="metric-assigned" class="text-slate-900 text-xs font-black">0/20</strong>
+          </div>
+          <div class="flex flex-col sm:flex-row items-center gap-0.5 sm:gap-1.5 text-slate-600 border-x sm:border-0 border-slate-200 px-1">
+            <span class="w-2 h-2 rounded-full bg-emerald-500 hidden sm:inline-block"></span>
+            <span class="text-[10px] sm:text-xs text-slate-500">Aman:</span>
+            <strong id="metric-ready" class="text-emerald-700 text-xs font-black">0</strong>
+          </div>
+          <div class="flex flex-col sm:flex-row items-center gap-0.5 sm:gap-1.5 text-slate-600">
+            <span class="w-2 h-2 rounded-full bg-amber-500 hidden sm:inline-block"></span>
+            <span class="text-[10px] sm:text-xs text-slate-500">Cadangan:</span>
+            <strong id="metric-room-backups" class="text-amber-700 text-xs font-black">0</strong>
+          </div>
+        </div>
+
       </div>
 
-      <!-- Room Picker (Ruang 1..11 + Ruang Guru) -->
-      <div class="flex items-center gap-3">
-        <label for="select-room" class="text-xs font-bold text-slate-500 uppercase tracking-wider">Ruangan:</label>
-        <div class="relative">
-          <select id="select-room" class="appearance-none bg-slate-50 border border-slate-300 hover:border-indigo-400 font-bold text-slate-800 text-sm sm:text-base rounded-xl px-4 py-2 pr-9 focus:ring-2 focus:ring-indigo-500 focus:outline-none transition cursor-pointer">
-            <!-- Populated via JS: Ruang 1 - Ruang 11 & Ruang Guru -->
-          </select>
-          <i data-lucide="chevron-down" class="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none"></i>
+      <!-- Bottom Row: Room Picker & Session Selector (2-Col on Mobile) -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-2 border-t border-slate-100">
+        <!-- Room Picker -->
+        <div class="flex items-center gap-2 min-w-0">
+          <label for="select-room" class="text-xs font-bold text-slate-500 uppercase tracking-wider flex-shrink-0">Ruang:</label>
+          <div class="relative flex-1 min-w-0">
+            <select id="select-room" class="w-full appearance-none bg-slate-50 border border-slate-300 hover:border-indigo-400 font-bold text-slate-800 text-xs sm:text-sm rounded-xl px-3 py-2 pr-8 focus:ring-2 focus:ring-indigo-500 focus:outline-none transition cursor-pointer truncate">
+              <!-- Populated via JS: Ruang 1 - Ruang 11 & Ruang Guru -->
+            </select>
+            <i data-lucide="chevron-down" class="w-4 h-4 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none"></i>
+          </div>
         </div>
-      </div>
 
-      <!-- Session Selector Pills -->
-      <div class="flex items-center gap-2">
-        <span class="text-xs font-bold text-slate-500 uppercase tracking-wider mr-1">Sesi:</span>
-        <div id="session-pills" class="flex bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-semibold">
-          <button class="session-btn px-3 py-1 rounded-lg bg-indigo-600 text-white shadow-sm" data-session="Sesi 1">Sesi 1</button>
-          <button class="session-btn px-3 py-1 rounded-lg text-slate-600 hover:text-slate-900" data-session="Sesi 2">Sesi 2</button>
-          <button id="pill-sesi3" class="session-btn px-3 py-1 rounded-lg text-slate-600 hover:text-slate-900" data-session="Sesi 3">Sesi 3</button>
-        </div>
-      </div>
-
-      <!-- Quick Room Metrics -->
-      <div class="flex items-center gap-4 text-xs">
-        <div class="flex items-center gap-1.5 text-slate-600">
-          <span class="w-2 h-2 rounded-full bg-indigo-500"></span>
-          <span>Meja Terisi: <strong id="metric-assigned" class="text-slate-900">0/20</strong></span>
-        </div>
-        <div class="flex items-center gap-1.5 text-slate-600">
-          <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
-          <span>Aman: <strong id="metric-ready" class="text-emerald-700">0</strong></span>
-        </div>
-        <div class="flex items-center gap-1.5 text-slate-600">
-          <span class="w-2 h-2 rounded-full bg-amber-500"></span>
-          <span>Cadangan Ruang: <strong id="metric-room-backups" class="text-amber-700">2</strong></span>
+        <!-- Session Selector Pills -->
+        <div class="flex items-center gap-2 min-w-0">
+          <span class="text-xs font-bold text-slate-500 uppercase tracking-wider flex-shrink-0">Sesi:</span>
+          <div id="session-pills" class="grid grid-cols-3 sm:flex flex-1 bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-semibold text-center gap-0.5">
+            <button class="session-btn px-2 sm:px-3 py-1 rounded-lg bg-indigo-600 text-white shadow-sm text-xs truncate" data-session="Sesi 1">Sesi 1</button>
+            <button class="session-btn px-2 sm:px-3 py-1 rounded-lg text-slate-600 hover:text-slate-900 text-xs truncate" data-session="Sesi 2">Sesi 2</button>
+            <button id="pill-sesi3" class="session-btn px-2 sm:px-3 py-1 rounded-lg text-slate-600 hover:text-slate-900 text-xs truncate" data-session="Sesi 3">Sesi 3</button>
+          </div>
         </div>
       </div>
 
     </div>
 
     <!-- AUTO-COPY INHERITANCE BANNER -->
-    <div id="inheritance-info-banner" class="bg-indigo-50/70 border border-indigo-200 rounded-2xl px-4 py-2.5 flex items-center justify-between text-xs text-indigo-900 shadow-2xs">
-      <div class="flex items-center gap-2">
+    <div id="inheritance-info-banner" class="bg-indigo-50/70 border border-indigo-200 rounded-2xl px-3 sm:px-4 py-2 sm:py-2.5 flex items-center justify-between text-xs text-indigo-900 shadow-2xs">
+      <div class="flex items-center gap-2 min-w-0">
         <i data-lucide="sparkles" class="w-4 h-4 text-indigo-600 flex-shrink-0"></i>
-        <span id="inheritance-info-text">
+        <span id="inheritance-info-text" class="text-[11px] sm:text-xs truncate sm:whitespace-normal">
           Posisi meja otomatis diwarisi dari sesi sebelumnya. Perubahan di sesi ini hanya tersimpan khusus untuk sesi ini.
         </span>
       </div>
-      <span class="text-[11px] font-semibold text-indigo-700 bg-white px-2 py-0.5 rounded-md border border-indigo-200">
+      <span class="text-[10px] sm:text-[11px] font-semibold text-indigo-700 bg-white px-2 py-0.5 rounded-md border border-indigo-200 flex-shrink-0">
         Auto-Copy Aktif
       </span>
     </div>
 
+    <!-- MOBILE VIEW TOGGLE: DENAH MEJA VS LAPTOP TERSEDIA (Tampil khusus di layar HP / < lg) -->
+    <div class="flex lg:hidden bg-slate-200/90 p-1 rounded-xl text-xs font-bold gap-1 shadow-2xs w-full">
+      <button id="mobile-toggle-desks" class="flex-1 py-2 px-3 rounded-lg bg-white text-indigo-700 shadow-xs flex items-center justify-center gap-1.5 transition">
+        <i data-lucide="layout-grid" class="w-4 h-4"></i>
+        <span>Denah Meja</span>
+      </button>
+      <button id="mobile-toggle-pool" class="flex-1 py-2 px-3 rounded-lg text-slate-600 hover:text-slate-900 flex items-center justify-center gap-1.5 transition">
+        <i data-lucide="box" class="w-4 h-4"></i>
+        <span>Laptop Tersedia (<span id="mobile-pool-count">0</span>)</span>
+      </button>
+    </div>
+
     <!-- MAIN TWO-COLUMN WORKSPACE: DESK GRID & LAPTOP POOL -->
-    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6 items-start">
       
       <!-- LEFT / CENTER: DESK SEATING GRID & ROOM BACKUPS -->
-      <div class="lg:col-span-8 xl:col-span-9 bg-white rounded-2xl border border-slate-200 p-4 sm:p-6 shadow-sm flex flex-col gap-5">
+      <div id="workspace-desk-section" class="lg:col-span-8 xl:col-span-9 bg-white rounded-2xl border border-slate-200 p-3.5 sm:p-6 shadow-sm flex flex-col gap-4 sm:gap-5">
         
         <!-- MEJA PENGAWAS BANNER (Hidden if Ruang Guru is selected) -->
-        <div id="meja-pengawas-banner" class="w-full max-w-md mx-auto py-2.5 px-6 rounded-xl border-2 border-slate-800 bg-slate-50 text-slate-800 font-bold text-center tracking-wider text-sm shadow-sm flex items-center justify-center gap-2">
+        <div id="meja-pengawas-banner" class="w-full max-w-md mx-auto py-2 sm:py-2.5 px-4 sm:px-6 rounded-xl border-2 border-slate-800 bg-slate-50 text-slate-800 font-bold text-center tracking-wider text-xs sm:text-sm shadow-sm flex items-center justify-center gap-2">
           <i data-lucide="shield-alert" class="w-4 h-4 text-slate-600"></i>
           <span>MEJA PENGAWAS</span>
         </div>
 
         <!-- Room Label & Directions Info -->
-        <div class="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-600 px-2">
-          <div class="flex items-center gap-1.5">
-            <span class="font-bold text-slate-800 text-sm" id="current-room-title">Ruang 1</span>
-            <span class="text-slate-400">•</span>
-            <span id="current-date-label" class="font-semibold text-slate-700">26 Okt</span>
-            <span class="text-slate-400">•</span>
-            <span id="current-session-label" class="font-semibold text-slate-700">Sesi 1</span>
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs text-slate-600 px-1">
+          <div class="flex items-center justify-between sm:justify-start gap-1.5">
+            <div class="flex items-center gap-1.5">
+              <span class="font-bold text-slate-800 text-sm" id="current-room-title">Ruang 1</span>
+              <span class="text-slate-400">•</span>
+              <span id="current-date-label" class="font-semibold text-slate-700">26 Okt</span>
+              <span class="text-slate-400">•</span>
+              <span id="current-session-label" class="font-semibold text-slate-700">Sesi 1</span>
+            </div>
+            <span class="text-slate-400 italic text-[11px] hidden md:inline">Tarik laptop dari dock cadangan ke meja</span>
           </div>
-          <div class="flex items-center gap-2">
-            <button id="btn-auto-plot" class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-sm shadow-indigo-100 transition" title="Plot otomatis meja sesuai jadwal pemilik, atau pinjam laptop sesi berikutnya jika kosong">
+          <div class="grid grid-cols-2 sm:flex items-center gap-2 w-full sm:w-auto">
+            <button id="btn-auto-plot" class="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-sm shadow-indigo-100 transition min-h-[38px]" title="Plot otomatis meja sesuai jadwal pemilik, atau pinjam laptop sesi berikutnya jika kosong">
               <i data-lucide="wand-2" class="w-3.5 h-3.5"></i>
               <span>Plot Otomatis</span>
             </button>
-            <button id="btn-clear-room-desks" class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs shadow-2xs transition" title="Kosongkan semua meja di ruangan ini dan kembalikan laptop menjadi cadangan">
+            <button id="btn-clear-room-desks" class="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs shadow-2xs transition min-h-[38px]" title="Kosongkan semua meja di ruangan ini dan kembalikan laptop menjadi cadangan">
               <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
               <span>Kosongkan Meja</span>
             </button>
-            <span class="text-slate-400 italic hidden md:inline">Tarik laptop dari dock cadangan ke meja</span>
           </div>
+        </div>
+
+        <!-- Mobile Horizontal Scroll Hint (Visible only on < sm) -->
+        <div class="flex sm:hidden items-center justify-between text-[11px] text-slate-500 bg-indigo-50/60 px-3 py-1.5 rounded-xl border border-indigo-100">
+          <span>👉 <strong>Geser denah</strong> ke samping untuk melihat seluruh meja</span>
+          <span class="text-indigo-600 font-bold">↔️</span>
         </div>
 
         <!-- DYNAMIC DESK MATRIX CONTAINER -->
@@ -434,7 +468,7 @@
           <thead class="bg-slate-900 text-white sticky top-0 z-10 select-none text-[11px] font-bold uppercase tracking-wider">
             <tr>
               <th class="py-3 px-3 border-b border-slate-800">NIS</th>
-              <th class="py-3 px-3 border-b border-slate-800">NAMA</th>
+              <th class="py-3 px-3 border-b border-slate-800 col-sticky-nama">NAMA</th>
               <th class="py-3 px-2 border-b border-slate-800 text-center">KELAS</th>
               <th class="py-3 px-2 border-b border-slate-800 text-center">RUANG KELAS</th>
               <th class="py-3 px-2 border-b border-slate-800 text-center">RUANG LAPTOP</th>
@@ -543,7 +577,7 @@
 
   <!-- MODAL: QUICK INSPECTION & EDIT MEJA / LAPTOP -->
   <div id="modal-desk" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
-    <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-100 flex flex-col gap-5 max-h-[90vh] overflow-y-auto">
+    <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-100 flex flex-col gap-5 max-h-[90dvh] overflow-y-auto">
       
       <!-- Modal Header -->
       <div class="flex items-start justify-between border-b border-slate-100 pb-3">
@@ -780,6 +814,6 @@
 
   <!-- LOAD STATIC DATA & APP SCRIPTS -->
   <script src="data/roomsData.js?v=20261025_004"></script>
-  <script src="js/app.js?v=20261025_004"></script>
+  <script src="js/app.js?v=20261025_005"></script>
 </body>
 </html>

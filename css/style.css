@@ -26,12 +26,17 @@
   background: #94a3b8;
 }
 
-/* Desk Card Layout Animation */
+/* Desk Card Layout Animation & Touch */
 .desk-card {
   transition: all 0.18s ease-in-out;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 .desk-card:hover {
   transform: translateY(-2px);
+}
+.desk-card:active {
+  transform: scale(0.98);
 }
 
 /* Pulse animation for sync indicator */
@@ -48,4 +53,31 @@
   -webkit-user-drag: element;
   user-select: none;
   touch-action: manipulation;
+}
+
+/* Touch target optimizations for mobile buttons & inputs */
+button, select, input {
+  touch-action: manipulation;
+}
+
+/* Mobile smooth horizontal scrolling */
+#desk-grid-container,
+.rekap-table-wrapper {
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+}
+
+/* Sticky column on mobile data table for student name */
+@media (max-width: 768px) {
+  .col-sticky-nama {
+    position: sticky !important;
+    left: 0 !important;
+    z-index: 5;
+    background-color: inherit;
+    box-shadow: 2px 0 6px -2px rgba(0, 0, 0, 0.15);
+  }
+  thead th.col-sticky-nama {
+    background-color: #0f172a !important;
+    z-index: 20 !important;
+  }
 }

@@ -76,7 +76,7 @@
 
   // --- LOCAL STATE LOADING & AUTO SEEDING ---
   const CACHE_VERSION_KEY = "tka_cache_version";
-  const CURRENT_CACHE_VERSION = "20261025_004";
+  const CURRENT_CACHE_VERSION = "20261025_005";
 
   function loadLocalState() {
     const savedVersion = localStorage.getItem(CACHE_VERSION_KEY);
@@ -570,7 +570,7 @@ function getRoomBackupsStore(date, session, room) {
       row.forEach((deskNo) => {
         if (deskNo === null) {
           const spacer = document.createElement("div");
-          spacer.className = "hidden sm:block pointer-events-none opacity-0";
+          spacer.className = "pointer-events-none opacity-0 min-w-[8px] sm:min-w-[20px] h-full";
           gridEl.appendChild(spacer);
           return;
         }
@@ -585,7 +585,7 @@ function getRoomBackupsStore(date, session, room) {
 
   function createDeskCard(roomName, deskNo, roomAssignments) {
     const card = document.createElement("div");
-    card.className = "desk-card group relative bg-white border-2 rounded-2xl p-3 flex flex-col justify-between gap-2 shadow-xs cursor-pointer select-none transition-all";
+    card.className = "desk-card group relative bg-white border-2 rounded-xl sm:rounded-2xl p-2.5 sm:p-3 flex flex-col justify-between gap-1.5 sm:gap-2 shadow-xs cursor-pointer select-none transition-all active:scale-[0.98]";
     card.dataset.room = roomName;
     card.dataset.desk = deskNo;
 
@@ -1343,6 +1343,8 @@ function getRoomBackupsStore(date, session, room) {
 
     // Update count badge
     if (countBadge) countBadge.textContent = `${list.length} Unit`;
+    const mobilePoolBadge = document.getElementById("mobile-pool-count");
+    if (mobilePoolBadge) mobilePoolBadge.textContent = list.length;
 
     // 4. Sort Options
     const activeRCode = activeRoom === "Ruang Guru" ? "Ruang Guru" : activeRoom.replace("Ruang ", "R");
@@ -1572,7 +1574,7 @@ function getRoomBackupsStore(date, session, room) {
 
       tr.innerHTML = `
         <td class="py-2.5 px-3 font-mono font-bold text-slate-700 whitespace-nowrap">${row.nis || "-"}</td>
-        <td class="py-2.5 px-3 font-bold text-slate-900 whitespace-nowrap">${row.nama}</td>
+        <td class="py-2.5 px-3 font-bold text-slate-900 whitespace-nowrap col-sticky-nama">${row.nama}</td>
         <td class="py-2.5 px-2 text-center whitespace-nowrap text-slate-600 font-semibold">${row.kelas || "-"}</td>
         <td class="py-2.5 px-2 text-center whitespace-nowrap">
           <span class="px-2 py-0.5 rounded-md font-bold text-slate-700 bg-slate-100 border border-slate-200">
@@ -2653,6 +2655,40 @@ function getRoomBackupsStore(date, session, room) {
         renderRekapLaptopTable();
       });
     }
+
+    // Mobile Segmented Toggle (Denah Meja vs Laptop Tersedia)
+    const mobileToggleDesks = document.getElementById("mobile-toggle-desks");
+    const mobileTogglePool = document.getElementById("mobile-toggle-pool");
+    const deskSection = document.getElementById("workspace-desk-section");
+    const poolSection = document.getElementById("workspace-pool-section");
+
+    if (mobileToggleDesks && mobileTogglePool && deskSection && poolSection) {
+      mobileToggleDesks.addEventListener("click", () => {
+        deskSection.classList.remove("hidden");
+        poolSection.classList.add("hidden");
+        mobileToggleDesks.className = "flex-1 py-2 px-3 rounded-lg bg-white text-indigo-700 shadow-xs flex items-center justify-center gap-1.5 transition";
+        mobileTogglePool.className = "flex-1 py-2 px-3 rounded-lg text-slate-600 hover:text-slate-900 flex items-center justify-center gap-1.5 transition";
+      });
+
+      mobileTogglePool.addEventListener("click", () => {
+        deskSection.classList.add("hidden");
+        poolSection.classList.remove("hidden");
+        mobileTogglePool.className = "flex-1 py-2 px-3 rounded-lg bg-white text-indigo-700 shadow-xs flex items-center justify-center gap-1.5 transition";
+        mobileToggleDesks.className = "flex-1 py-2 px-3 rounded-lg text-slate-600 hover:text-slate-900 flex items-center justify-center gap-1.5 transition";
+      });
+    }
+
+    // Modal backdrop click to dismiss on mobile touch
+    ["modal-desk", "modal-add-laptop", "modal-settings"].forEach((modalId) => {
+      const modalEl = document.getElementById(modalId);
+      if (modalEl) {
+        modalEl.addEventListener("click", (e) => {
+          if (e.target === modalEl) {
+            modalEl.classList.add("hidden");
+          }
+        });
+      }
+    });
 
     // Pool Dropzone
     const poolDropzone = document.getElementById("pool-dropzone");
