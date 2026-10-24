@@ -62,7 +62,7 @@
     renderRoomSelector();
     renderActiveRoom();
     renderLaptopPool();
-    renderRekapLaptopTable();
+    if (currentTab === "tabel-laptop") renderRekapLaptopTable();
     updateSyncPill();
     startAutoPolling();
     refreshIcons();
@@ -179,10 +179,12 @@
       "Dell Latitude 3420 (Core i3, 8GB)"
     ];
 
-    for (let i = list.length + 1; i <= list.length + 30; i++) {
+    const currentLen = list.length;
+    for (let i = 1; i <= 30; i++) {
+      const idx = currentLen + i;
       list.push({
-        idLaptop: `LP-${String(i).padStart(3, "0")}`,
-        labelLaptop: brands[i % brands.length],
+        idLaptop: `LP-${String(idx).padStart(3, "0")}`,
+        labelLaptop: brands[(i - 1) % brands.length],
         pemilikLaptop: "Inventaris Lab Komputer",
         isReady: true,
         hasCharger: true,
