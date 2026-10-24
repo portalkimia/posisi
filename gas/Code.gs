@@ -139,6 +139,8 @@ function doGet(e) {
         result = handleSyncFromPersiapan(ss, target);
         cleanDataRuanganUncollected(ss);
       }
+    } else if (action === "cleanPinjam") {
+      result = cleanPinjamNotes(ss);
     } else if (action === "getSheetData") {
       const sName = (e && e.parameter && e.parameter.sheetName) || "Rekap_Persiapan";
       const sheet = ss.getSheetByName(sName);
@@ -194,6 +196,8 @@ function doPost(e) {
       response = handleBatchSyncDate(ss, body.tanggal, body.items || []);
     } else if (action === "updateAssignment") {
       response = handleUpdateAssignment(ss, body);
+    } else if (action === "batchUpdateAssignments") {
+      response = handleBatchUpdateAssignments(ss, body);
     } else if (action === "upsertLaptop") {
       response = handleUpsertLaptop(ss, body);
     } else {
@@ -307,6 +311,20 @@ function handleBatchSyncDate(ss, tanggal, items) {
  * Upsert desk assignment into Data_Ruangan & cross-sync to date sheet Sesi column
  * Fully handles assigning and unassigning without orphaned records.
  */
+
+/**
+ * Bulk update desk assignments in Data_Ruangan & date sheets
+ */
+function handleBatchUpdateAssignments(ss, payload) {
+  const items = payload.items || [];
+  const results = [];
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    results.push(handleUpdateAssignment(ss, item));
+  }
+  SpreadsheetApp.flush();
+  return { success: true, count: results.length };
+}
 function handleUpdateAssignment(ss, payload) {
   const sheetRooms = ss.getSheetByName(SHEET_ROOMS);
   const sheetLaptops = ss.getSheetByName(SHEET_LAPTOPS);
@@ -568,6 +586,78 @@ function cleanDataRuanganUncollected(ss) {
     }
   }
   SpreadsheetApp.flush();
+}
+
+
+/**
+ * Clean legacy "Pinjam laptop..." and "Cadangan..." text from KETERANGAN / CATATAN
+ * Sesuai instruksi: keterangan hanya untuk catatan laptop bermasalah.
+ */
+function cleanPinjamNotes(ss) {
+  let cleanedRekapCount = 0;
+  let cleanedRoomsCount = 0;
+
+  // 1. Clean Rekap date sheets
+  ["Rekap_26_Okt", "Rekap_27_Okt", "Rekap_28_Okt", "Rekap_29_Okt"].forEach(function (sheetName) {
+    const sheet = ss.getSheetByName(sheetName);
+    if (!sheet) return;
+    const range = sheet.getDataRange();
+    const values = range.getValues();
+    let modified = false;
+
+    // Col 11 (0-based) is KETERANGAN
+    for (let i = 1; i < values.length; i++) {
+      const ket = String(values[i][11] || "").trim();
+      if (ket.toLowerCase().includes("pinjam") || ket.toLowerCase().startsWith("cadangan ruang")) {
+        let cleaned = ket.replace(/Pinjam\s+laptop\s+[^)]+\([^)]+\)/gi, "")
+                         .replace(/\(Pinjam\s+[^)]+\)/gi, "")
+                         .replace(/Pinjam\s+laptop\s+[^,;]+/gi, "")
+                         .replace(/Cadangan\s+Ruang\s+\d+/gi, "")
+                         .trim();
+        cleaned = cleaned.replace(/^[\s,;\-]+|[\s,;\-]+$/g, "").trim();
+        if (cleaned !== ket) {
+          values[i][11] = cleaned;
+          cleanedRekapCount++;
+          modified = true;
+        }
+      }
+    }
+    if (modified) {
+      range.setValues(values);
+    }
+  });
+
+  // 2. Clean Data_Ruangan
+  const sRooms = ss.getSheetByName(SHEET_ROOMS);
+  if (sRooms) {
+    const range = sRooms.getDataRange();
+    const values = range.getValues();
+    let modified = false;
+
+    // Col 10 (0-based) is CATATAN
+    for (let i = 1; i < values.length; i++) {
+      const cat = String(values[i][10] || "").trim();
+      if (cat.toLowerCase().includes("pinjam") || cat.toLowerCase().startsWith("cadangan ruang")) {
+        let cleaned = cat.replace(/Pinjam\s+laptop\s+[^)]+\([^)]+\)/gi, "")
+                         .replace(/\(Pinjam\s+[^)]+\)/gi, "")
+                         .replace(/Pinjam\s+laptop\s+[^,;]+/gi, "")
+                         .replace(/Cadangan\s+Ruang\s+\d+/gi, "")
+                         .trim();
+        cleaned = cleaned.replace(/^[\s,;\-]+|[\s,;\-]+$/g, "").trim();
+        if (cleaned !== cat) {
+          values[i][10] = cleaned;
+          cleanedRoomsCount++;
+          modified = true;
+        }
+      }
+    }
+    if (modified) {
+      range.setValues(values);
+    }
+  }
+
+  SpreadsheetApp.flush();
+  return { success: true, cleanedRekap: cleanedRekapCount, cleanedRooms: cleanedRoomsCount };
 }
 
 function ensureSetup(ss) {

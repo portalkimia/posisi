@@ -76,7 +76,7 @@
 
   // --- LOCAL STATE LOADING & AUTO SEEDING ---
   const CACHE_VERSION_KEY = "tka_cache_version";
-  const CURRENT_CACHE_VERSION = "20261025_003";
+  const CURRENT_CACHE_VERSION = "20261025_004";
 
   function loadLocalState() {
     const savedVersion = localStorage.getItem(CACHE_VERSION_KEY);
@@ -973,14 +973,10 @@ function getRoomBackupsStore(date, session, room) {
         );
 
         if (fallbackLaptop) {
-          const note = fallbackLaptop.catatan
-            ? `${fallbackLaptop.catatan} (Pinjam ${candidateName} ${fb.label})`
-            : `Pinjam laptop ${candidateName} (${fb.label})`;
-
           plannedAssignments[d] = {
             laptop: fallbackLaptop,
             isPrimary: false,
-            catatan: note
+            catatan: fallbackLaptop.catatan || ""
           };
           claimedLaptopIds.add(fallbackLaptop.idLaptop.toLowerCase());
           plottedFallback++;
@@ -1942,7 +1938,7 @@ function getRoomBackupsStore(date, session, room) {
     assignLaptopToDesk(roomName, deskNo, bItem.idLaptop, {
       isReady: customDetails ? customDetails.isReady : bItem.isReady,
       hasCharger: customDetails ? customDetails.hasCharger : bItem.hasCharger,
-      catatan: customDetails ? customDetails.catatan : (bItem.catatan || `Cadangan ${roomName}`)
+      catatan: customDetails ? customDetails.catatan : (bItem.catatan || "")
     });
   }
 
