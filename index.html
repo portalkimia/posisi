@@ -46,7 +46,7 @@
             <div class="flex items-center gap-2">
               <h1 class="font-bold text-slate-900 text-base sm:text-lg tracking-tight leading-none">TKA 2026</h1>
               <span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
-                Alokasi Meja & Cadangan (v2.2)
+                Alokasi Meja & Cadangan (v2.3)
               </span>
             </div>
             <p class="text-xs text-slate-600 hidden sm:block">Sinkronisasi Realtime Google Sheets 26–29 Okt</p>
@@ -255,6 +255,46 @@
             <button class="filter-pool-btn px-2 py-0.5 rounded-md font-semibold bg-slate-200 text-slate-800" data-filter="all">Semua</button>
             <button class="filter-pool-btn px-2 py-0.5 rounded-md text-slate-500 hover:bg-slate-100" data-filter="ready">Aman Saja</button>
             <button class="filter-pool-btn px-2 py-0.5 rounded-md text-slate-500 hover:bg-slate-100" data-filter="charger">Ada Charger</button>
+          </div>
+
+          <!-- Pool Sort & Room Filter Controls -->
+          <div class="flex flex-col gap-2 pt-2 border-t border-slate-100 text-xs">
+            <!-- Sort Selector -->
+            <div class="flex items-center justify-between gap-1.5">
+              <label for="pool-sort-select" class="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                <i data-lucide="arrow-up-down" class="w-3.5 h-3.5 text-indigo-600"></i>
+                <span>Urutkan:</span>
+              </label>
+              <select id="pool-sort-select" class="text-xs bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 font-semibold text-slate-700 hover:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-500 transition cursor-pointer">
+                <option value="room-asc">🏢 Ruangan (R1 ➔ R11)</option>
+                <option value="room-current-first">📍 Ruang Ini Terlebih Dahulu</option>
+                <option value="name-asc">👤 Nama Pemilik (A-Z)</option>
+                <option value="ready-first">✅ Kondisi Aman Dulu</option>
+              </select>
+            </div>
+
+            <!-- Room Filter Selector -->
+            <div class="flex items-center justify-between gap-1.5">
+              <label for="pool-room-filter" class="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                <i data-lucide="filter" class="w-3.5 h-3.5 text-amber-600"></i>
+                <span>Filter Ruang:</span>
+              </label>
+              <select id="pool-room-filter" class="text-xs bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 font-semibold text-slate-700 hover:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-500 transition cursor-pointer">
+                <option value="ALL">Semua Ruangan (Seluruh Sekolah)</option>
+                <option value="R1">Ruang 1 (R1)</option>
+                <option value="R2">Ruang 2 (R2)</option>
+                <option value="R3">Ruang 3 (R3)</option>
+                <option value="R4">Ruang 4 (R4)</option>
+                <option value="R5">Ruang 5 (R5)</option>
+                <option value="R6">Ruang 6 (R6)</option>
+                <option value="R7">Ruang 7 (R7)</option>
+                <option value="R8">Ruang 8 (R8)</option>
+                <option value="R9">Ruang 9 (R9)</option>
+                <option value="R10">Ruang 10 (R10)</option>
+                <option value="R11">Ruang 11 (R11)</option>
+                <option value="Ruang Guru">Ruang Guru (Posko)</option>
+              </select>
+            </div>
           </div>
 
           <!-- Dropzone to Return Laptop to Pool -->
@@ -739,7 +779,7 @@
   <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
 
   <!-- LOAD STATIC DATA & APP SCRIPTS -->
-  <script src="data/roomsData.js?v=20261025_001"></script>
-  <script src="js/app.js?v=20261025_001"></script>
+  <script src="data/roomsData.js?v=20261025_002"></script>
+  <script src="js/app.js?v=20261025_002"></script>
 </body>
 </html>

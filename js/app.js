@@ -37,6 +37,10 @@
   let rekapOnlyIssues = false;
   let rekapOnlyUncollected = false;
 
+  // Pool Drawer Sort & Filter State
+  let poolSortOption = "room-asc"; // 'room-asc' | 'room-current-first' | 'name-asc' | 'ready-first'
+  let poolRoomFilter = "ALL";     // 'ALL' | 'R1' | ... | 'Ruang Guru'
+
   // Selected desk for inspection modal
   let selectedDeskForModal = null;
 
@@ -72,7 +76,7 @@
 
   // --- LOCAL STATE LOADING & AUTO SEEDING ---
   const CACHE_VERSION_KEY = "tka_cache_version";
-  const CURRENT_CACHE_VERSION = "20261025_001";
+  const CURRENT_CACHE_VERSION = "20261025_002";
 
   function loadLocalState() {
     const savedVersion = localStorage.getItem(CACHE_VERSION_KEY);
@@ -233,16 +237,30 @@
   }
 
   
-  function getRoomBackupsStore(date, session, room) {
+    // --- ROOM HELPERS & SORTING ---
+  function normalizeRoomCode(r) {
+    if (!r) return "R1";
+    const str = String(r).trim();
+    if (/^ruang\s*guru$/i.test(str)) return "Ruang Guru";
+    const match = str.match(/^ruang\s*(\d+)$/i) || str.match(/^r(\d+)$/i);
+    if (match) return "R" + match[1];
+    return str;
+  }
+
+  function getRoomRank(rCode) {
+    if (!rCode) return 999;
+    const str = String(rCode).trim();
+    if (/^ruang\s*guru$/i.test(str)) return 100;
+    const match = str.match(/\d+/);
+    if (match) return parseInt(match[0], 10);
+    return 99;
+  }
+
+function getRoomBackupsStore(date, session, room) {
     if (!roomBackups[date]) roomBackups[date] = {};
     if (!roomBackups[date][session]) roomBackups[date][session] = {};
     if (!roomBackups[date][session][room]) {
-      if (room === "Ruang Guru") {
-        const defaults = typeof generateDefaultRoomBackups === "function" ? generateDefaultRoomBackups() : {};
-        roomBackups[date][session][room] = (defaults["Ruang Guru"] || []).map((x) => ({ ...x }));
-      } else {
-        roomBackups[date][session][room] = [];
-      }
+      roomBackups[date][session][room] = [];
     }
     return roomBackups[date][session][room];
   }
@@ -345,15 +363,19 @@
 
   function getEffectiveRoomBackups(date, session, room) {
     const rCode = room === "Ruang Guru" ? "Ruang Guru" : room.replace("Ruang ", "R");
-    const roomAssignments = getEffectiveRoomAssignments(date, session, room);
-
-    // Track assigned owners & laptop IDs on desks in this room session
-    const assignedOwners = new Set();
-    const assignedIds = new Set();
-    Object.values(roomAssignments).forEach((a) => {
-      if (a && a.idLaptop && !a.unassigned) {
-        assignedIds.add(String(a.idLaptop).toLowerCase());
-        if (a.pemilikLaptop) assignedOwners.add(String(a.pemilikLaptop).toLowerCase().trim());
+    
+    // Globally track assigned owners & laptop IDs across ALL rooms in this session:
+    const globallyAssignedOwners = new Set();
+    const globallyAssignedIds = new Set();
+    Object.keys(ROOMS_DATA).forEach((rName) => {
+      const rAssignments = getEffectiveRoomAssignments(date, session, rName);
+      if (rAssignments) {
+        Object.values(rAssignments).forEach((a) => {
+          if (a && a.idLaptop && !a.unassigned) {
+            globallyAssignedIds.add(String(a.idLaptop).toLowerCase().trim());
+            if (a.pemilikLaptop) globallyAssignedOwners.add(String(a.pemilikLaptop).toLowerCase().trim());
+          }
+        });
       }
     });
 
@@ -372,8 +394,8 @@
       const nis = String(r.nis || r.NIS || "").trim();
       const idLap = `LP-${nis || nama.replace(/\s+/g, "").substring(0, 8)}`;
 
-      // If already placed on a desk in this session, exclude from cadangan
-      if (assignedOwners.has(nama.toLowerCase()) || assignedIds.has(idLap.toLowerCase())) {
+      // If already placed on ANY desk in this session, exclude from cadangan
+      if (globallyAssignedOwners.has(nama.toLowerCase()) || globallyAssignedIds.has(idLap.toLowerCase())) {
         return;
       }
 
@@ -415,11 +437,13 @@
       });
     });
 
-    // 2. Add extra school spares in roomBackups
+    // 2. Add extra school spares in roomBackups (excluding dummy units)
     const extraSpares = getRoomBackupsStore(date, session, room);
     extraSpares.forEach((extra) => {
-      if (extra && !assignedIds.has(String(extra.idLaptop).toLowerCase())) {
-        if (!cadanganList.some((c) => c.idLaptop.toLowerCase() === extra.idLaptop.toLowerCase())) {
+      if (extra && extra.idLaptop && !globallyAssignedIds.has(String(extra.idLaptop).toLowerCase())) {
+        const idLow = String(extra.idLaptop).toLowerCase();
+        if (idLow.startsWith("cad-guru") || idLow.startsWith("cad-r")) return;
+        if (!cadanganList.some((c) => c.idLaptop.toLowerCase() === idLow)) {
           cadanganList.push(extra);
         }
       }
@@ -1113,33 +1137,45 @@
         </button>
       </div>
 
-      <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 pt-2">
-        ${guruBackups.map((b, idx) => `
-          <div class="bg-slate-50 border border-slate-200 hover:border-indigo-400 rounded-2xl p-4 flex flex-col justify-between gap-3 shadow-2xs hover:shadow-sm transition">
-            <div class="flex items-center justify-between">
-              <span class="px-2 py-0.5 rounded-md font-black text-xs bg-indigo-100 text-indigo-900">${b.idLaptop}</span>
-              <div class="flex items-center gap-1.5">
-                <span class="w-2.5 h-2.5 rounded-full ${b.isReady ? "bg-emerald-500" : "bg-rose-500"}"></span>
-                <span class="text-xs font-bold ${b.hasCharger ? "text-amber-600" : "text-rose-500"}">${b.hasCharger ? "⚡" : "✕"}</span>
+      ${guruBackups.length === 0 ? `
+        <div class="py-14 text-center text-slate-400 text-xs flex flex-col items-center gap-2.5 bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl p-6">
+          <div class="w-12 h-12 rounded-2xl bg-slate-200/60 flex items-center justify-center text-slate-400">
+            <i data-lucide="inbox" class="w-6 h-6 text-slate-400"></i>
+          </div>
+          <span class="font-bold text-slate-700 text-sm">Ruang Guru Saat Ini Kosong</span>
+          <span class="text-slate-500 max-w-md text-center">
+            Belum ada unit laptop yang diplotkan ke Ruang Guru. Anda dapat memindahkan unit cadangan dari daftar sebelah kanan atau menambahkan unit stok baru.
+          </span>
+        </div>
+      ` : `
+        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 pt-2">
+          ${guruBackups.map((b, idx) => `
+            <div class="bg-slate-50 border border-slate-200 hover:border-indigo-400 rounded-2xl p-4 flex flex-col justify-between gap-3 shadow-2xs hover:shadow-sm transition">
+              <div class="flex items-center justify-between">
+                <span class="px-2 py-0.5 rounded-md font-black text-xs bg-indigo-100 text-indigo-900">${b.idLaptop}</span>
+                <div class="flex items-center gap-1.5">
+                  <span class="w-2.5 h-2.5 rounded-full ${b.isReady ? "bg-emerald-500" : "bg-rose-500"}"></span>
+                  <span class="text-xs font-bold ${b.hasCharger ? "text-amber-600" : "text-rose-500"}">${b.hasCharger ? "⚡" : "✕"}</span>
+                </div>
+              </div>
+
+              <div class="flex flex-col">
+                <span class="text-xs font-black text-slate-900">${b.pemilikLaptop || b.labelLaptop}</span>
+                <span class="text-[11px] text-slate-500">${b.labelLaptop}</span>
+                ${b.catatan ? `<span class="text-[10px] text-slate-600 mt-1 bg-white p-1 rounded border border-slate-200">📝 ${b.catatan}</span>` : ""}
+              </div>
+
+              <div class="pt-2 border-t border-slate-200 flex items-center justify-between text-xs">
+                <span class="text-emerald-700 font-bold">Stok Siap</span>
+                <button class="btn-dispatch-spare text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-1" data-idx="${idx}">
+                  <span>Kirim ke Ruang</span>
+                  <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i>
+                </button>
               </div>
             </div>
-
-            <div class="flex flex-col">
-              <span class="text-xs font-bold text-slate-900">${b.labelLaptop}</span>
-              <span class="text-[11px] text-slate-500">${b.pemilikLaptop}</span>
-              ${b.catatan ? `<span class="text-[10px] text-slate-600 mt-1 bg-white p-1 rounded border border-slate-200">📝 ${b.catatan}</span>` : ""}
-            </div>
-
-            <div class="pt-2 border-t border-slate-200 flex items-center justify-between text-xs">
-              <span class="text-emerald-700 font-bold">Stok Siap</span>
-              <button class="btn-dispatch-spare text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-1" data-idx="${idx}">
-                <span>Kirim ke Ruang</span>
-                <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i>
-              </button>
-            </div>
-          </div>
-        `).join("")}
-      </div>
+          `).join("")}
+        </div>
+      `}
     `;
 
     container.appendChild(wrapper);
@@ -1186,6 +1222,96 @@
     showToast(`Laptop ${item.idLaptop} berhasil dikirim ke ${targetRoom}`, "success");
   }
 
+  
+  // --- POOL OF AVAILABLE BACKUPS ACROSS ALL ROOMS ---
+  function getAllAvailableBackupsAcrossRooms(date, session) {
+    const globallyAssignedOwners = new Set();
+    const globallyAssignedIds = new Set();
+
+    Object.keys(ROOMS_DATA).forEach((rName) => {
+      const roomAssignments = getEffectiveRoomAssignments(date, session, rName);
+      if (roomAssignments) {
+        Object.values(roomAssignments).forEach((a) => {
+          if (a && a.idLaptop && !a.unassigned) {
+            globallyAssignedIds.add(String(a.idLaptop).toLowerCase().trim());
+            if (a.pemilikLaptop) {
+              globallyAssignedOwners.add(String(a.pemilikLaptop).toLowerCase().trim());
+            }
+          }
+        });
+      }
+    });
+
+    const available = [];
+    const seenIds = new Set();
+
+    const dateList = rekapLaptopsByDate[date] || [];
+    dateList.forEach((r, idx) => {
+      const isPresent = r.keberadaan === true || String(r.keberadaan || r["KEBERADAAN DI RUANGAN"] || "").trim().toUpperCase() === "TRUE";
+      if (!isPresent) return; // Siswa belum kumpul laptop
+
+      const nama = String(r.nama || r.NAMA || "").trim();
+      const nis = String(r.nis || r.NIS || idx + 1).trim();
+      const idLap = `LP-${nis || nama.replace(/\s+/g, "").substring(0, 8)}`;
+
+      const idLower = idLap.toLowerCase();
+      const nameLower = nama.toLowerCase();
+
+      // If already on any desk in this session, skip!
+      if (globallyAssignedIds.has(idLower) || (nama && globallyAssignedOwners.has(nameLower))) {
+        return;
+      }
+
+      if (seenIds.has(idLower)) return;
+      seenIds.add(idLower);
+
+      let rl = String(r.ruangLaptop || r["RUANG LAPTOP"] || r.ruangKelas || "R1").trim();
+      rl = normalizeRoomCode(rl);
+
+      const rKelas = String(r.ruangKelas || r["RUANG KELAS"] || "").trim();
+      const isReady = (r.laptop || r.LAPTOP) !== "TIDAK AMAN";
+      const hasCharger = (r.charger || r.CHARGER) === "ADA";
+      const catatan = r.keterangan || r.KETERANGAN || "";
+
+      available.push({
+        idLaptop: idLap,
+        labelLaptop: `Laptop Mandiri (${r.kelas || r.KELAS || "-"})`,
+        pemilikLaptop: nama,
+        nis: nis,
+        kelas: r.kelas || r.KELAS || "",
+        ruangKelas: rKelas,
+        ruangLaptop: rl,
+        isReady: isReady,
+        hasCharger: hasCharger,
+        catatan: catatan,
+        isBackup: true,
+        keberadaan: true
+      });
+    });
+
+    // Also include valid custom spares in roomBackups
+    Object.keys(ROOMS_DATA).forEach((rName) => {
+      const rCode = normalizeRoomCode(rName);
+      const extraSpares = getRoomBackupsStore(date, session, rName);
+      extraSpares.forEach((sp) => {
+        if (!sp || !sp.idLaptop) return;
+        const spIdLower = String(sp.idLaptop).toLowerCase();
+        if (spIdLower.startsWith("cad-guru") || spIdLower.startsWith("cad-r")) return;
+        if (globallyAssignedIds.has(spIdLower) || seenIds.has(spIdLower)) return;
+        seenIds.add(spIdLower);
+
+        available.push({
+          ...sp,
+          ruangLaptop: sp.ruangLaptop || rCode,
+          keberadaan: true,
+          isBackup: true
+        });
+      });
+    });
+
+    return available;
+  }
+
   function renderLaptopPool() {
     const listContainer = document.getElementById("laptop-pool-list");
     const countBadge = document.getElementById("pool-count-badge");
@@ -1193,35 +1319,57 @@
 
     listContainer.innerHTML = "";
 
-    const hasSearch = Boolean(searchQuery && searchQuery.trim());
-    let list = [];
+    let list = getAllAvailableBackupsAcrossRooms(activeDate, activeSession);
 
-    if (hasSearch) {
-      const q = searchQuery.toLowerCase().trim();
-      list = laptopPool.filter((l) => 
-        l.idLaptop.toLowerCase().includes(q) ||
-        (l.labelLaptop && l.labelLaptop.toLowerCase().includes(q)) ||
-        (l.pemilikLaptop && l.pemilikLaptop.toLowerCase().includes(q))
-      );
-    } else {
-      // Hanya tampilkan laptop yang sudah dikumpulkan / ada di ruangan
-      list = laptopPool.filter((l) => (!l.assignedRoom || !l.assignedDesk) && l.keberadaan !== false);
+    // 1. Filter by Room
+    if (poolRoomFilter !== "ALL") {
+      list = list.filter((l) => l.ruangLaptop.toUpperCase() === poolRoomFilter.toUpperCase());
     }
 
+    // 2. Filter by Search Query
+    if (searchQuery && searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      list = list.filter((l) =>
+        l.idLaptop.toLowerCase().includes(q) ||
+        (l.labelLaptop && l.labelLaptop.toLowerCase().includes(q)) ||
+        (l.pemilikLaptop && l.pemilikLaptop.toLowerCase().includes(q)) ||
+        (l.ruangLaptop && l.ruangLaptop.toLowerCase().includes(q)) ||
+        (l.kelas && l.kelas.toLowerCase().includes(q))
+      );
+    }
+
+    // 3. Filter by Condition
     if (currentFilter === "ready") {
       list = list.filter((l) => l.isReady);
     } else if (currentFilter === "charger") {
       list = list.filter((l) => l.hasCharger);
     }
 
-    const availableCount = laptopPool.filter((l) => !l.assignedRoom || !l.assignedDesk).length;
-    if (countBadge) countBadge.textContent = availableCount;
+    // Update count badge
+    if (countBadge) countBadge.textContent = `${list.length} Unit`;
+
+    // 4. Sort Options
+    const activeRCode = activeRoom === "Ruang Guru" ? "Ruang Guru" : activeRoom.replace("Ruang ", "R");
+    if (poolSortOption === "room-asc") {
+      list.sort((a, b) => getRoomRank(a.ruangLaptop) - getRoomRank(b.ruangLaptop) || (a.pemilikLaptop || "").localeCompare(b.pemilikLaptop || ""));
+    } else if (poolSortOption === "room-current-first") {
+      list.sort((a, b) => {
+        const aIsCur = a.ruangLaptop.toUpperCase() === activeRCode.toUpperCase() ? 0 : 1;
+        const bIsCur = b.ruangLaptop.toUpperCase() === activeRCode.toUpperCase() ? 0 : 1;
+        if (aIsCur !== bIsCur) return aIsCur - bIsCur;
+        return getRoomRank(a.ruangLaptop) - getRoomRank(b.ruangLaptop) || (a.pemilikLaptop || "").localeCompare(b.pemilikLaptop || "");
+      });
+    } else if (poolSortOption === "name-asc") {
+      list.sort((a, b) => (a.pemilikLaptop || "").localeCompare(b.pemilikLaptop || ""));
+    } else if (poolSortOption === "ready-first") {
+      list.sort((a, b) => (b.isReady ? 1 : 0) - (a.isReady ? 1 : 0) || getRoomRank(a.ruangLaptop) - getRoomRank(b.ruangLaptop));
+    }
 
     if (list.length === 0) {
       listContainer.innerHTML = `
         <div class="py-8 text-center text-slate-400 text-xs flex flex-col items-center gap-2">
           <i data-lucide="check-check" class="w-6 h-6 text-emerald-500"></i>
-          <span>${hasSearch ? "Tidak ada laptop yang cocok dengan pencarian." : "Semua laptop telah terpasang atau tidak cocok dengan filter."}</span>
+          <span>${searchQuery ? "Tidak ada laptop cadangan yang cocok dengan pencarian." : (poolRoomFilter !== "ALL" ? `Tidak ada laptop cadangan tersisa di ${poolRoomFilter}.` : "Semua laptop telah terpasang di meja.")}</span>
         </div>
       `;
       refreshIcons();
@@ -1229,83 +1377,60 @@
     }
 
     list.forEach((laptop) => {
-      const isAssigned = Boolean(laptop.assignedRoom && laptop.assignedDesk);
+      const isCurrentRoom = laptop.ruangLaptop.toUpperCase() === activeRCode.toUpperCase();
       const item = document.createElement("div");
-      item.className = "group border rounded-xl p-2.5 flex items-center justify-between gap-2 shadow-2xs transition select-none " +
-        (isAssigned ? "bg-slate-100/80 border-slate-300 opacity-85" : "bg-slate-50 hover:bg-white border-slate-200 hover:border-indigo-400 hover:shadow-sm cursor-grab active:cursor-grabbing");
+      item.className = "group border rounded-xl p-2.5 flex flex-col justify-between gap-2 shadow-2xs hover:shadow-xs transition select-none bg-slate-50 hover:bg-white border-slate-200 hover:border-indigo-400 cursor-grab active:cursor-grabbing";
+      item.setAttribute("draggable", "true");
+      item.dataset.idLaptop = laptop.idLaptop;
 
-      if (!isAssigned) {
-        item.setAttribute("draggable", "true");
-        item.dataset.idLaptop = laptop.idLaptop;
+      item.addEventListener("dragstart", (e) => {
+        e.dataTransfer.setData("text/plain", JSON.stringify({
+          source: "pool",
+          idLaptop: laptop.idLaptop,
+          fromRoom: laptop.ruangLaptop,
+          pemilikLaptop: laptop.pemilikLaptop
+        }));
+        item.classList.add("dragging");
+      });
 
-        item.addEventListener("dragstart", (e) => {
-          e.dataTransfer.setData("text/plain", JSON.stringify({
-            source: "pool",
-            idLaptop: laptop.idLaptop
-          }));
-          item.classList.add("dragging");
-        });
+      item.addEventListener("dragend", () => {
+        item.classList.remove("dragging");
+      });
 
-        item.addEventListener("dragend", () => {
-          item.classList.remove("dragging");
-        });
-      }
+      item.innerHTML = `
+        <div class="flex items-center justify-between gap-1.5">
+          <span class="text-xs font-black text-slate-900 truncate" title="${laptop.pemilikLaptop}">${laptop.pemilikLaptop}</span>
+          <div class="flex items-center gap-1.5 flex-shrink-0">
+            <span class="w-2.5 h-2.5 rounded-full ${laptop.isReady ? "bg-emerald-500" : "bg-rose-500"}" title="${laptop.isReady ? "Aman" : "Tidak Aman"}"></span>
+            <span class="text-xs font-bold ${laptop.hasCharger ? "text-amber-600" : "text-rose-500"}" title="${laptop.hasCharger ? "Ada Charger" : "Tanpa Charger"}">${laptop.hasCharger ? "⚡" : "✕"}</span>
+          </div>
+        </div>
 
-      const left = document.createElement("div");
-      left.className = "flex flex-col truncate";
+        <div class="flex items-center gap-1.5 text-[10px] text-slate-500 truncate">
+          <span class="font-mono font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.2 rounded">${laptop.idLaptop}</span>
+          <span class="truncate">${laptop.kelas || laptop.labelLaptop || ""}</span>
+          ${laptop.ruangKelas && laptop.ruangKelas !== laptop.ruangLaptop ? `<span class="text-[9px] px-1 rounded bg-slate-200 text-slate-700">Kelas ${laptop.ruangKelas}</span>` : ""}
+        </div>
 
-      const top = document.createElement("div");
-      top.className = "flex items-center gap-1.5";
+        <div class="pt-1.5 border-t border-slate-200/60 flex items-center justify-between gap-2 text-xs">
+          <span class="px-2 py-0.5 rounded-md text-[10px] font-black ${isCurrentRoom ? 'bg-emerald-100 text-emerald-900 border border-emerald-300' : 'bg-amber-100 text-amber-900 border border-amber-300'} flex items-center gap-1 truncate" title="Lokasi fisik laptop cadangan ini saat ini">
+            <i data-lucide="map-pin" class="w-3 h-3 ${isCurrentRoom ? 'text-emerald-700' : 'text-amber-700'}"></i>
+            <span>${isCurrentRoom ? `Ruang Ini (${laptop.ruangLaptop})` : `Ruang ${laptop.ruangLaptop}`}</span>
+          </span>
 
-      const nameSpan = document.createElement("span");
-      nameSpan.className = "text-xs font-black text-slate-900 truncate";
-      nameSpan.textContent = laptop.pemilikLaptop || laptop.labelLaptop || "Laptop Mandiri";
-      nameSpan.title = laptop.pemilikLaptop || "";
-      top.appendChild(nameSpan);
-
-      const readySpan = document.createElement("span");
-      readySpan.className = `w-2 h-2 rounded-full ${laptop.isReady ? "bg-emerald-500" : "bg-rose-500"} flex-shrink-0`;
-      readySpan.title = laptop.isReady ? "Aman" : "Tidak Aman";
-      top.appendChild(readySpan);
-
-      if (laptop.hasCharger) {
-        const chgSpan = document.createElement("span");
-        chgSpan.className = "text-[10px] text-amber-500 font-bold flex-shrink-0";
-        chgSpan.textContent = "⚡";
-        chgSpan.title = "Ada Charger";
-        top.appendChild(chgSpan);
-      }
-
-      if (isAssigned) {
-        const assignedBadge = document.createElement("span");
-        assignedBadge.className = "text-[10px] font-bold px-1.5 py-0.2 rounded bg-indigo-100 text-indigo-800 border border-indigo-200 flex-shrink-0";
-        assignedBadge.textContent = `${laptop.assignedRoom} M.${laptop.assignedDesk}`;
-        top.appendChild(assignedBadge);
-      }
-
-      left.appendChild(top);
-
-      const subSpan = document.createElement("div");
-      subSpan.className = "flex items-center gap-1.5 text-[10px] text-slate-500 mt-0.5 truncate";
-      subSpan.innerHTML = `
-        <span class="font-mono font-bold text-indigo-700 bg-indigo-50 px-1 rounded">${laptop.idLaptop}</span>
-        <span class="truncate">${laptop.labelLaptop || ""}</span>
-        ${laptop.keberadaan === false ? '<span class="px-1 rounded bg-rose-100 text-rose-800 font-bold">Belum Kumpul</span>' : ''}
+          <button type="button" class="btn-pool-quick-assign px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[10px] shadow-2xs transition flex items-center gap-1" title="Pasang ke meja aktif di ${activeRoom}">
+            <i data-lucide="plus-circle" class="w-3 h-3"></i>
+            <span>Pasang Meja</span>
+          </button>
+        </div>
       `;
-      left.appendChild(subSpan);
 
-      item.appendChild(left);
-
-      if (!isAssigned) {
-        const assignBtn = document.createElement("button");
-        assignBtn.className = "opacity-80 group-hover:opacity-100 p-1.5 rounded-lg text-indigo-600 hover:bg-indigo-50 border border-transparent hover:border-indigo-200 transition text-[11px] font-semibold flex items-center gap-1";
-        assignBtn.title = "Pasang ke meja aktif";
-        assignBtn.innerHTML = '<i data-lucide="corner-up-left" class="w-3.5 h-3.5"></i>';
-        assignBtn.addEventListener("click", (e) => {
+      const btnAssign = item.querySelector(".btn-pool-quick-assign");
+      if (btnAssign) {
+        btnAssign.addEventListener("click", (e) => {
           e.stopPropagation();
           quickAssignToFirstAvailableDesk(laptop.idLaptop);
         });
-        item.appendChild(assignBtn);
       }
 
       listContainer.appendChild(item);
@@ -1702,27 +1827,54 @@
 
   // --- ASSIGNMENTS & OPTIMISTIC UPDATES ---
   function assignLaptopToDesk(roomName, deskNo, idLaptop, customDetails = null) {
+    const targetRCode = roomName === "Ruang Guru" ? "Ruang Guru" : roomName.replace("Ruang ", "R");
+    
+    // Find student in rekapLaptopsByDate
+    const dateList = rekapLaptopsByDate[activeDate] || [];
+    let student = dateList.find((r) => 
+      (r.nis && `LP-${r.nis}` === idLaptop) ||
+      (r.nama && `LP-${r.nama}` === idLaptop) ||
+      (r.nama && idLaptop.includes(r.nama))
+    );
+
     let laptop = laptopPool.find((l) => l.idLaptop === idLaptop);
-    if (!laptop) {
-      const dateList = rekapLaptopsByDate[activeDate] || [];
-      const student = dateList.find((r) => 
-        `LP-${r.nis || r.NIS}` === idLaptop || 
-        (r.nama && `LP-${r.nama}` === idLaptop) || 
-        (r.nama && r.nama === idLaptop)
-      );
-      if (student) {
-        laptop = {
-          idLaptop: idLaptop,
-          labelLaptop: `Laptop Mandiri (${student.kelas || student.KELAS || "-"})`,
-          pemilikLaptop: student.nama || student.NAMA,
-          isReady: (student.laptop || student.LAPTOP) !== "TIDAK AMAN",
-          hasCharger: (student.charger || student.CHARGER) === "ADA",
-          catatan: student.keterangan || student.KETERANGAN || ""
-        };
-        laptopPool.push(laptop);
-      }
+    if (!laptop && student) {
+      laptop = {
+        idLaptop: idLaptop,
+        labelLaptop: `Laptop Mandiri (${student.kelas || student.KELAS || "-"})`,
+        pemilikLaptop: student.nama || student.NAMA,
+        isReady: (student.laptop || student.LAPTOP) !== "TIDAK AMAN",
+        hasCharger: (student.charger || student.CHARGER) === "ADA",
+        catatan: student.keterangan || student.KETERANGAN || "",
+        ruangLaptop: student.ruangLaptop || student.ruangKelas || targetRCode
+      };
+      laptopPool.push(laptop);
     }
     if (!laptop) return;
+
+    const oldRoom = (student && student.ruangLaptop) || laptop.ruangLaptop || "";
+    const hasMovedRoom = oldRoom && oldRoom.toUpperCase() !== targetRCode.toUpperCase();
+
+    // 1. UPDATE RUANGAN SECARA OTOMATIS JIKA BERPINDAH RUANGAN
+    if (student) {
+      student.ruangLaptop = targetRCode;
+      student.keberadaan = true;
+      // Perbarui ruangLaptop di seluruh tanggal agar sinkron
+      TKA_DATES.forEach((dConf) => {
+        const dList = rekapLaptopsByDate[dConf.id];
+        if (dList) {
+          const dItem = dList.find((r) => r.nama === student.nama || (r.nis && student.nis && r.nis === student.nis));
+          if (dItem) {
+            dItem.ruangLaptop = targetRCode;
+            dItem.keberadaan = true;
+          }
+        }
+      });
+    }
+
+    laptop.ruangLaptop = targetRCode;
+    laptop.assignedRoom = roomName;
+    laptop.assignedDesk = deskNo;
 
     if (!assignments[activeDate]) assignments[activeDate] = {};
     if (!assignments[activeDate][activeSession]) assignments[activeDate][activeSession] = {};
@@ -1742,8 +1894,6 @@
       lastUpdated: new Date().toISOString()
     };
 
-    laptop.assignedRoom = roomName;
-    laptop.assignedDesk = deskNo;
     laptop.isReady = isReady;
     laptop.hasCharger = hasCharger;
     laptop.catatan = catatan;
@@ -1756,13 +1906,22 @@
     });
 
     saveAssignments();
+    saveRekapLaptopsByDate();
     saveLaptopPool();
     renderActiveRoom();
     renderLaptopPool();
     if (currentTab === "tabel-laptop") renderRekapLaptopTable();
 
     syncAssignmentToGAS(activeDate, activeSession, roomName, deskNo);
-    showToast(`Laptop ${idLaptop} dipasang ke ${roomName} Meja ${deskNo} (${activeDate} ${activeSession})`, "success");
+    if (student) {
+      syncRekapRowToGAS(activeDate, student);
+    }
+
+    if (hasMovedRoom) {
+      showToast(`Laptop ${laptop.pemilikLaptop} dipindahkan dari ${oldRoom} ke ${roomName} Meja ${deskNo} (Ruang laptop otomatis diubah ke ${targetRCode})`, "success");
+    } else {
+      showToast(`Laptop ${laptop.pemilikLaptop} dipasang ke ${roomName} Meja ${deskNo} (${activeDate} ${activeSession})`, "success");
+    }
   }
 
   function assignBackupLaptopToDesk(roomName, deskNo, idLaptop, customDetails = null) {
@@ -1848,13 +2007,16 @@
 
   function quickAssignToFirstAvailableDesk(idLaptop) {
     const roomConf = ROOMS_DATA[activeRoom];
-    if (!roomConf || roomConf.isBackupCenter) return;
+    if (!roomConf || roomConf.isBackupCenter) {
+      showToast(`Ruangan ${activeRoom} adalah pusat cadangan dan tidak memiliki meja ujian. Pilih Ruang 1-11 untuk memasang ke meja.`, "warning");
+      return;
+    }
 
     const roomAssignments = getEffectiveRoomAssignments(activeDate, activeSession, activeRoom);
     let targetDesk = null;
 
     for (let d = 1; d <= roomConf.totalDesks; d++) {
-      if (!roomAssignments[d] || !roomAssignments[d].idLaptop) {
+      if (!roomAssignments[d] || !roomAssignments[d].idLaptop || roomAssignments[d].unassigned) {
         targetDesk = d;
         break;
       }
@@ -2398,6 +2560,22 @@
       searchQuery = e.target.value;
       renderLaptopPool();
     });
+
+    const poolSortSelect = document.getElementById("pool-sort-select");
+    if (poolSortSelect) {
+      poolSortSelect.addEventListener("change", (e) => {
+        poolSortOption = e.target.value;
+        renderLaptopPool();
+      });
+    }
+
+    const poolRoomFilterSelect = document.getElementById("pool-room-filter");
+    if (poolRoomFilterSelect) {
+      poolRoomFilterSelect.addEventListener("change", (e) => {
+        poolRoomFilter = e.target.value;
+        renderLaptopPool();
+      });
+    }
 
     document.querySelectorAll(".filter-pool-btn").forEach((btn) => {
       btn.addEventListener("click", () => {

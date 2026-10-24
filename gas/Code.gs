@@ -370,14 +370,14 @@ function handleUpdateAssignment(ss, payload) {
   // 2. Cross-sync to the date's Rekap sheet under the specific Sesi column
   const targetPemilik = pemilikLaptop || payload.unassignPemilik || oldPemilik;
   if (targetPemilik) {
-    const rCode = room.replace("Ruang ", "R");
+    const rCode = room === "Ruang Guru" ? "Ruang Guru" : room.replace("Ruang ", "R");
     const deskText = isUnassign ? "-" : (deskNo ? "Meja " + deskNo : "Cadangan");
 
     const rekapUpdate = {
       tanggal: tanggal,
       nama: targetPemilik,
-      ruangLaptop: isUnassign ? "" : rCode,
-      keberadaan: !isUnassign,
+      ruangLaptop: rCode, // Tetap berada di ruangan ini (sebagai cadangan ruangan)
+      keberadaan: true,
       charger: hasCharger ? "ADA" : "TIDAK ADA",
       laptopStatus: isReady ? "AMAN" : "TIDAK AMAN",
       keterangan: catatan

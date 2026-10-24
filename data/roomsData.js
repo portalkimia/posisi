@@ -509,50 +509,11 @@ function generateMasterRekapList() {
  */
 function generateDefaultRoomBackups() {
   const backups = {};
-
-  // For Ruang 1 s/d Ruang 11
   for (let r = 1; r <= 11; r++) {
-    const rName = "Ruang " + r;
-    const rCode = "R" + r;
-    backups[rName] = [
-      {
-        idLaptop: `CAD-${rCode}-01`,
-        labelLaptop: `Cadangan ${rName} (Core i5 8GB)`,
-        pemilikLaptop: `Unit Cadangan ${rName}`,
-        isReady: true,
-        hasCharger: true,
-        catatan: "Siap pakai di ruangan",
-        isBackup: true,
-        room: rName
-      },
-      {
-        idLaptop: `CAD-${rCode}-02`,
-        labelLaptop: `Cadangan ${rName} (Ryzen 5 8GB)`,
-        pemilikLaptop: `Unit Cadangan ${rName}`,
-        isReady: true,
-        hasCharger: true,
-        catatan: "Siap pakai di ruangan",
-        isBackup: true,
-        room: rName
-      }
-    ];
+    backups['Ruang ' + r] = [];
   }
-
-  // For Ruang Guru (Pusat Cadangan Sekolah)
-  backups["Ruang Guru"] = [];
-  for (let g = 1; g <= 8; g++) {
-    backups["Ruang Guru"].push({
-      idLaptop: `CAD-GURU-${String(g).padStart(2, "0")}`,
-      labelLaptop: `Laptop Cadangan Pusat Posko (ThinkPad L14)`,
-      pemilikLaptop: `Pusat Cadangan Ruang Guru`,
-      isReady: true,
-      hasCharger: true,
-      catatan: "Stok cadangan pusat sekolah",
-      isBackup: true,
-      room: "Ruang Guru"
-    });
-  }
-
+  // Ruang Guru (Pusat Cadangan Sekolah) dimulai kosong sesuai instruksi panitia
+  backups['Ruang Guru'] = [];
   return backups;
 }
 
