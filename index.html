@@ -817,6 +817,23 @@
           <span>Masukkan URL lalu klik "Uji Koneksi" untuk memverifikasi.</span>
         </div>
 
+        <!-- Sync from Rekap_Persiapan -->
+        <div class="p-3.5 rounded-xl border border-amber-200 bg-amber-50/70 flex flex-col gap-2">
+          <div class="flex items-center justify-between gap-2">
+            <span class="font-bold text-amber-900 text-xs flex items-center gap-1.5">
+              <i data-lucide="refresh-cw" class="w-3.5 h-3.5 text-amber-600"></i>
+              <span>Sinkronisasi Rekap_Persiapan</span>
+            </span>
+            <button type="button" id="btn-sync-persiapan" class="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white rounded-lg font-bold text-xs transition shadow-2xs flex items-center gap-1.5">
+              <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
+              <span>Sinkronkan Sekarang</span>
+            </button>
+          </div>
+          <p class="text-[11px] text-amber-800 leading-relaxed">
+            Gunakan tombol ini jika Anda baru saja mengubah atau memperbarui data di sheet <strong>Rekap_Persiapan</strong> agar seluruh sheet tanggal dan denah meja ikut terupdate otomatis (siswa yang tidak mengumpulkan laptop akan otomatis dikosongkan dari meja).
+          </p>
+        </div>
+
         <div class="flex items-center justify-between gap-2.5 pt-3 border-t border-slate-100">
           <button type="button" id="btn-test-connection" class="px-3 py-2 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-xl font-bold transition flex items-center gap-1.5">
             <i data-lucide="activity" class="w-3.5 h-3.5"></i>
@@ -839,6 +856,6 @@
 
   <!-- LOAD STATIC DATA & APP SCRIPTS -->
   <script src="data/roomsData.js?v=20261025_004"></script>
-  <script src="js/app.js?v=20261025_009"></script>
+  <script src="js/app.js?v=20261025_010"></script>
 </body>
 </html>

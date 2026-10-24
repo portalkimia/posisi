@@ -79,7 +79,7 @@
 
   // --- LOCAL STATE LOADING & AUTO SEEDING ---
   const CACHE_VERSION_KEY = "tka_cache_version";
-  const CURRENT_CACHE_VERSION = "20261025_009";
+  const CURRENT_CACHE_VERSION = "20261025_010";
 
   function loadLocalState() {
     const savedVersion = localStorage.getItem(CACHE_VERSION_KEY);
@@ -3176,6 +3176,47 @@ function getRoomBackupsStore(date, session, room) {
     // Settings Modal Events
     const modalSettings = document.getElementById("modal-settings");
     document.getElementById("btn-settings").addEventListener("click", () => modalSettings.classList.remove("hidden"));
+
+    const btnSyncPersiapan = document.getElementById("btn-sync-persiapan");
+    if (btnSyncPersiapan) {
+      btnSyncPersiapan.addEventListener("click", async () => {
+        if (!gasUrl) {
+          showToast("URL Google Apps Script belum terpasang.", "error");
+          return;
+        }
+        if (!confirm("Sinkronkan seluruh lembar tanggal dengan sheet Rekap_Persiapan?\n\nSiswa yang belum mengumpulkan laptop (KEBERADAAN = FALSE) akan otomatis dikosongkan dari meja ujian.")) {
+          return;
+        }
+
+        btnSyncPersiapan.disabled = true;
+        btnSyncPersiapan.innerHTML = `<span class="animate-spin inline-block mr-1">⏳</span> Memproses...`;
+        showToast("Menyinkronkan Rekap_Persiapan ke seluruh lembar tanggal...", "info");
+
+        try {
+          const res = await fetch(`${gasUrl}?action=syncPersiapan`);
+          const json = await res.json();
+          if (json && json.success) {
+            showToast("Sinkronisasi dari Rekap_Persiapan berhasil!", "success");
+            // Clear local cache to force fresh pull
+            localStorage.removeItem(STORAGE_KEY_REKAP_BY_DATE);
+            localStorage.removeItem(STORAGE_KEY_ASSIGNMENTS);
+            localStorage.removeItem(STORAGE_KEY_POOL);
+            localStorage.removeItem(STORAGE_KEY_BACKUPS);
+            await pollRoomStateFromGAS();
+            renderActiveRoom();
+            if (currentTab === "tabel-laptop") renderRekapLaptopTable();
+          } else {
+            showToast("Gagal menyinkronkan: " + (json.error || "Kesalahan server"), "error");
+          }
+        } catch (err) {
+          showToast("Gagal menghubungi server GAS: " + err.message, "error");
+        } finally {
+          btnSyncPersiapan.disabled = false;
+          btnSyncPersiapan.innerHTML = `<i data-lucide="sparkles" class="w-3.5 h-3.5"></i><span>Sinkronkan Sekarang</span>`;
+          refreshIcons();
+        }
+      });
+    }
     document.getElementById("modal-settings-close").addEventListener("click", () => modalSettings.classList.add("hidden"));
 
     document.getElementById("btn-save-settings").addEventListener("click", () => {
