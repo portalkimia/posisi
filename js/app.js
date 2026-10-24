@@ -76,7 +76,7 @@
 
   // --- LOCAL STATE LOADING & AUTO SEEDING ---
   const CACHE_VERSION_KEY = "tka_cache_version";
-  const CURRENT_CACHE_VERSION = "20261025_002";
+  const CURRENT_CACHE_VERSION = "20261025_003";
 
   function loadLocalState() {
     const savedVersion = localStorage.getItem(CACHE_VERSION_KEY);
@@ -1913,9 +1913,6 @@ function getRoomBackupsStore(date, session, room) {
     if (currentTab === "tabel-laptop") renderRekapLaptopTable();
 
     syncAssignmentToGAS(activeDate, activeSession, roomName, deskNo);
-    if (student) {
-      syncRekapRowToGAS(activeDate, student);
-    }
 
     if (hasMovedRoom) {
       showToast(`Laptop ${laptop.pemilikLaptop} dipindahkan dari ${oldRoom} ke ${roomName} Meja ${deskNo} (Ruang laptop otomatis diubah ke ${targetRCode})`, "success");
@@ -2185,11 +2182,37 @@ function getRoomBackupsStore(date, session, room) {
 
     try {
       while (offlineQueue.length > 0) {
-        const item = offlineQueue[0];
+        let postBody = null;
+        let itemsConsumed = 1;
+
+        // Jika terdapat beberapa antrian updateAssignment, kirim sekaligus via batchUpdateAssignments (maks 30 item/request)
+        if (offlineQueue.length > 1 && offlineQueue[0].action === "updateAssignment") {
+          const batch = [];
+          for (let i = 0; i < Math.min(offlineQueue.length, 30); i++) {
+            if (offlineQueue[i].action === "updateAssignment") {
+              batch.push(offlineQueue[i]);
+            } else {
+              break;
+            }
+          }
+          if (batch.length > 1) {
+            postBody = {
+              action: "batchUpdateAssignments",
+              items: batch
+            };
+            itemsConsumed = batch.length;
+          }
+        }
+
+        if (!postBody) {
+          postBody = offlineQueue[0];
+          itemsConsumed = 1;
+        }
+
         const res = await fetch(gasUrl, {
           method: "POST",
           headers: { "Content-Type": "text/plain;charset=utf-8" },
-          body: JSON.stringify(item)
+          body: JSON.stringify(postBody)
         });
 
         const text = await res.text();
@@ -2203,14 +2226,14 @@ function getRoomBackupsStore(date, session, room) {
         if (!res.ok || (json && json.success === false)) {
           console.warn("GAS write locked or error:", (json && json.error) || text);
           updateSyncPill("offline");
-          // Schedule backoff retry without shifting queue item
+          // Jadwalkan retry backoff tanpa menghapus antrian
           setTimeout(() => {
             if (offlineQueue.length > 0) flushOfflineQueue();
           }, 3000);
           return;
         }
 
-        offlineQueue.shift();
+        offlineQueue.splice(0, itemsConsumed);
         saveOfflineQueue();
       }
       updateSyncPill("synced");
@@ -2227,15 +2250,18 @@ function getRoomBackupsStore(date, session, room) {
 
   function startAutoPolling() {
     if (pollInterval) clearInterval(pollInterval);
+    // Polling setiap 6-8 detik dengan random jitter agar 11 pengawas tidak menembak server serentak
+    const intervalMs = 6000 + Math.floor(Math.random() * 2000);
     pollInterval = setInterval(() => {
-      if (gasUrl && !isSyncing) {
+      if (gasUrl && !isSyncing && offlineQueue.length === 0) {
         pollRoomStateFromGAS();
       }
-    }, 20000);
+    }, intervalMs);
   }
 
   async function pollRoomStateFromGAS() {
-    if (!gasUrl) return;
+    // Jangan lakukan polling jika sedang ada proses pengiriman antrian lokal
+    if (!gasUrl || isSyncing || offlineQueue.length > 0) return;
     try {
       const url = `${gasUrl}?action=getSyncState&tanggal=${encodeURIComponent(activeDate)}&sesi=${encodeURIComponent(activeSession)}`;
       const res = await fetch(url);
