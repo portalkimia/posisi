@@ -121,6 +121,33 @@ function doGet(e) {
       const sheet = ss.getSheetByName(SHEET_LAPTOPS);
       const data = getSheetDataAsObjects(sheet);
       result = { success: true, data: data, count: data.length };
+    } else if (action === "listSheets") {
+      result = {
+        success: true,
+        sheets: ss.getSheets().map(function (s) { return s.getName(); })
+      };
+    } else if (action === "syncPersiapan") {
+      const target = (e && e.parameter && e.parameter.target) || "all";
+      if (target === "all") {
+        const results = {};
+        ["Rekap_26_Okt", "Rekap_27_Okt", "Rekap_28_Okt", "Rekap_29_Okt"].forEach(function (t) {
+          results[t] = handleSyncFromPersiapan(ss, t);
+        });
+        cleanDataRuanganUncollected(ss);
+        result = { success: true, message: "Synced Rekap_Persiapan to all date sheets and cleaned Data_Ruangan", results: results };
+      } else {
+        result = handleSyncFromPersiapan(ss, target);
+        cleanDataRuanganUncollected(ss);
+      }
+    } else if (action === "getSheetData") {
+      const sName = (e && e.parameter && e.parameter.sheetName) || "Rekap_Persiapan";
+      const sheet = ss.getSheetByName(sName);
+      if (!sheet) {
+        result = { success: false, error: "Sheet not found: " + sName };
+      } else {
+        const data = getSheetDataAsObjects(sheet);
+        result = { success: true, sheetName: sName, count: data.length, data: data };
+      }
     } else {
       result = { success: false, error: "Invalid action: " + action };
     }
@@ -430,6 +457,119 @@ function handleUpsertLaptop(ss, payload) {
 /**
  * Ensure sheets exist for all 4 dates with correct headers, dropdown validations & conditional styling
  */
+
+/**
+ * Synchronize exact student records, physical room location, and presence
+ * from Rekap_Persiapan to date rekap sheets.
+ * Guarantees that students with KEBERADAAN=FALSE have no desk assigned and
+ * laptops actually present match 100%.
+ */
+function handleSyncFromPersiapan(ss, targetSheetName) {
+  const sPersiapan = ss.getSheetByName("Rekap_Persiapan");
+  if (!sPersiapan) return { success: false, error: "Rekap_Persiapan sheet not found" };
+
+  const sTarget = ss.getSheetByName(targetSheetName || "Rekap_26_Okt");
+  if (!sTarget) return { success: false, error: "Target sheet not found: " + targetSheetName };
+
+  const persiapanData = getSheetDataAsObjects(sPersiapan);
+  const targetData = getSheetDataAsObjects(sTarget);
+
+  const targetMap = {};
+  targetData.forEach(function (r) {
+    if (r.NAMA) {
+      targetMap[String(r.NAMA).trim().toLowerCase()] = r;
+    }
+  });
+
+  const newRows = [];
+  const now = new Date().toISOString();
+
+  let countPresent = 0;
+  let countNotPresent = 0;
+
+  persiapanData.forEach(function (p) {
+    const name = String(p.NAMA || "").trim();
+    if (!name) return;
+    const nameKey = name.toLowerCase();
+    const existing = targetMap[nameKey] || {};
+
+    const isPresent = String(p["KEBERADAAN DI RUANGAN"] || "").trim().toUpperCase() === "TRUE";
+    if (isPresent) countPresent++;
+    else countNotPresent++;
+
+    let s1 = existing["SESI 1"] || "";
+    let s2 = existing["SESI 2"] || "";
+    let s3 = existing["SESI 3"] || "";
+
+    // If laptop is NOT in room, desks MUST be empty
+    if (!isPresent) {
+      s1 = "";
+      s2 = "";
+      s3 = "";
+    }
+
+    newRows.push([
+      existing.NIS || "",
+      name,
+      String(p.KELAS || existing.KELAS || "").trim(),
+      String(p["RUANG KELAS"] || existing["RUANG KELAS"] || "").trim(),
+      String(p["RUANG LAPTOP"] || "").trim(),
+      s1,
+      s2,
+      s3,
+      isPresent ? "TRUE" : "FALSE",
+      String(p.CHARGER || "").trim().toUpperCase(),
+      String(p.LAPTOP || "").trim().toUpperCase(),
+      String(p.KET || "").trim(),
+      now
+    ]);
+  });
+
+  const lastRow = sTarget.getLastRow();
+  if (lastRow > 1) {
+    sTarget.getRange(2, 1, lastRow - 1, HEADERS_REKAP.length).clearContent();
+  }
+
+  if (newRows.length > 0) {
+    sTarget.getRange(2, 1, newRows.length, HEADERS_REKAP.length).setValues(newRows);
+  }
+
+  SpreadsheetApp.flush();
+  return {
+    success: true,
+    sheet: targetSheetName,
+    totalRows: newRows.length,
+    presentCount: countPresent,
+    notPresentCount: countNotPresent
+  };
+}
+
+function cleanDataRuanganUncollected(ss) {
+  const sPersiapan = ss.getSheetByName("Rekap_Persiapan");
+  const sRooms = ss.getSheetByName(SHEET_ROOMS);
+  if (!sPersiapan || !sRooms) return;
+
+  const persiapanData = getSheetDataAsObjects(sPersiapan);
+  const uncollectedOwners = new Set();
+
+  persiapanData.forEach(function (p) {
+    const isPresent = String(p["KEBERADAAN DI RUANGAN"] || "").trim().toUpperCase() === "TRUE";
+    if (!isPresent && p.NAMA) {
+      uncollectedOwners.add(String(p.NAMA).trim().toLowerCase());
+    }
+  });
+
+  const roomsData = getSheetDataAsObjects(sRooms);
+  for (let i = roomsData.length - 1; i >= 0; i--) {
+    const row = roomsData[i];
+    const owner = String(row.PemilikLaptop || "").trim().toLowerCase();
+    if (uncollectedOwners.has(owner)) {
+      sRooms.deleteRow(i + 2); // 1-based, +1 header
+    }
+  }
+  SpreadsheetApp.flush();
+}
+
 function ensureSetup(ss) {
   // 1. Create Sheets for all 4 dates: Rekap_26_Okt .. Rekap_29_Okt
   Object.keys(DATES_CONFIG).forEach(function (tgl, idx) {

@@ -35,6 +35,7 @@
   let rekapFilterRuangKelas = "ALL";
   let rekapOnlyCross = false;
   let rekapOnlyIssues = false;
+  let rekapOnlyUncollected = false;
 
   // Selected desk for inspection modal
   let selectedDeskForModal = null;
@@ -174,6 +175,7 @@
       const hasCharger = (r.charger || r.CHARGER) === "ADA";
       const catatan = r.keterangan || r.KETERANGAN || "";
 
+      const isPresent = r.keberadaan === true || String(r.keberadaan || r["KEBERADAAN DI RUANGAN"] || "").trim().toUpperCase() === "TRUE";
       list.push({
         idLaptop: idLap,
         labelLaptop: `Laptop Mandiri (${r.kelas || r.KELAS || "-"})`,
@@ -185,6 +187,7 @@
         isReady: isReady,
         hasCharger: hasCharger,
         catatan: catatan,
+        keberadaan: isPresent,
         assignedRoom: null,
         assignedDesk: null
       });
@@ -343,9 +346,12 @@
 
     const cadanganList = [];
 
-    // 1. Find all student laptops physically placed in this room
+    // 1. Find all student laptops physically placed in this room (HANYA YANG SUDAH DIKUMPULKAN / ADA DI RUANGAN)
     const dateList = rekapLaptopsByDate[date] || [];
     dateList.forEach((r) => {
+      const isPresent = r.keberadaan === true || String(r.keberadaan || r["KEBERADAAN DI RUANGAN"] || "").trim().toUpperCase() === "TRUE";
+      if (!isPresent) return; // Siswa belum mengumpulkan laptop, tidak ada di ruangan!
+
       const rl = String(r.ruangLaptop || r["RUANG LAPTOP"] || "").trim().toUpperCase();
       if (rl !== rCode.toUpperCase() && rl !== room.toUpperCase()) return;
 
@@ -1185,7 +1191,8 @@
         (l.pemilikLaptop && l.pemilikLaptop.toLowerCase().includes(q))
       );
     } else {
-      list = laptopPool.filter((l) => !l.assignedRoom || !l.assignedDesk);
+      // Hanya tampilkan laptop yang sudah dikumpulkan / ada di ruangan
+      list = laptopPool.filter((l) => (!l.assignedRoom || !l.assignedDesk) && l.keberadaan !== false);
     }
 
     if (currentFilter === "ready") {
@@ -1375,17 +1382,34 @@
       );
     }
 
+    if (rekapOnlyUncollected) {
+      filtered = filtered.filter((r) => !r.keberadaan || String(r.keberadaan || r["KEBERADAAN DI RUANGAN"] || "").trim().toUpperCase() !== "TRUE");
+    }
+
+    let countPresent = 0;
+    let countUncollected = 0;
     let countNoCharger = 0;
     let countNotSafe = 0;
 
     dateList.forEach((r) => {
+      const isPresent = r.keberadaan === true || String(r.keberadaan || r["KEBERADAAN DI RUANGAN"] || "").trim().toUpperCase() === "TRUE";
+      if (isPresent) countPresent++;
+      else countUncollected++;
       if (r.charger === "TIDAK ADA") countNoCharger++;
       if (r.laptop === "TIDAK AMAN") countNotSafe++;
     });
 
-    document.getElementById("rekap-count-shown").textContent = filtered.length;
-    document.getElementById("rekap-count-no-charger").textContent = countNoCharger;
-    document.getElementById("rekap-count-not-safe").textContent = countNotSafe;
+    const elShown = document.getElementById("rekap-count-shown");
+    const elPresent = document.getElementById("rekap-count-present");
+    const elUncollected = document.getElementById("rekap-count-uncollected");
+    const elNoCharger = document.getElementById("rekap-count-no-charger");
+    const elNotSafe = document.getElementById("rekap-count-not-safe");
+
+    if (elShown) elShown.textContent = filtered.length;
+    if (elPresent) elPresent.textContent = countPresent;
+    if (elUncollected) elUncollected.textContent = countUncollected;
+    if (elNoCharger) elNoCharger.textContent = countNoCharger;
+    if (elNotSafe) elNotSafe.textContent = countNotSafe;
 
     if (filtered.length === 0) {
       tbody.innerHTML = `
@@ -1431,7 +1455,10 @@
           ${row.sesi3 || "-"}
         </td>
         <td class="py-2.5 px-2 text-center whitespace-nowrap">
-          <input type="checkbox" class="rekap-cb-keberadaan w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer" data-nis="${row.nis}" data-nama="${row.nama}" ${row.keberadaan ? "checked" : ""}>
+          <div class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold ${row.keberadaan ? "bg-emerald-50 text-emerald-800 border border-emerald-300" : "bg-rose-50 text-rose-700 border border-rose-200"}">
+            <input type="checkbox" class="rekap-cb-keberadaan w-3.5 h-3.5 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer" data-nis="${row.nis}" data-nama="${row.nama}" ${row.keberadaan ? "checked" : ""}>
+            <span>${row.keberadaan ? "Ada di Ruang" : "Belum Kumpul"}</span>
+          </div>
         </td>
         <td class="py-2.5 px-2 text-center whitespace-nowrap">
           <select class="rekap-select-charger appearance-none px-2 py-1 rounded-lg text-xs font-bold border cursor-pointer ${row.charger === "TIDAK ADA" ? "bg-red-600 text-white border-red-700 shadow-sm" : "bg-slate-100 text-slate-800 border-slate-300"}" data-nis="${row.nis}" data-nama="${row.nama}">
@@ -2397,6 +2424,17 @@
       }`;
       renderRekapLaptopTable();
     });
+
+    const toggleUncollectedBtn = document.getElementById("rekap-toggle-uncollected");
+    if (toggleUncollectedBtn) {
+      toggleUncollectedBtn.addEventListener("click", () => {
+        rekapOnlyUncollected = !rekapOnlyUncollected;
+        toggleUncollectedBtn.className = `flex-1 px-2.5 py-2 rounded-xl border font-bold transition truncate text-center ${
+          rekapOnlyUncollected ? "border-rose-500 bg-rose-600 text-white shadow-xs" : "border-slate-200 bg-slate-50 hover:bg-rose-50 text-slate-600"
+        }`;
+        renderRekapLaptopTable();
+      });
+    }
 
     // Pool Dropzone
     const poolDropzone = document.getElementById("pool-dropzone");

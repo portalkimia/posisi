@@ -372,6 +372,9 @@
           <button id="rekap-toggle-cross" class="flex-1 px-2.5 py-2 rounded-xl border border-slate-200 bg-slate-50 hover:bg-indigo-50 hover:border-indigo-200 font-bold text-slate-600 hover:text-indigo-600 transition truncate text-center" title="Tampilkan hanya laptop yang ruangannya beda dari ruang ujian siswa">
             🔄 Beda Ruang
           </button>
+          <button id="rekap-toggle-uncollected" class="flex-1 px-2.5 py-2 rounded-xl border border-slate-200 bg-slate-50 hover:bg-rose-50 hover:border-rose-200 font-bold text-slate-600 hover:text-rose-600 transition truncate text-center" title="Tampilkan hanya siswa yang belum mengumpulkan laptop">
+            ❌ Belum Kumpul
+          </button>
           <button id="rekap-toggle-issues" class="flex-1 px-2.5 py-2 rounded-xl border border-slate-200 bg-slate-50 hover:bg-rose-50 hover:border-rose-200 font-bold text-slate-600 hover:text-rose-600 transition truncate text-center" title="Tampilkan yang tanpa charger atau tidak aman">
             ⚠️ Bermasalah
           </button>
@@ -410,8 +413,12 @@
 
       <!-- Table Footer / Summary -->
       <div class="bg-slate-50 px-4 py-3 border-t border-slate-200 flex flex-wrap items-center justify-between text-xs text-slate-600 gap-2">
-        <div class="flex items-center gap-4">
-          <span>Menampilkan: <strong id="rekap-count-shown" class="text-slate-900">0</strong> Siswa</span>
+        <div class="flex flex-wrap items-center gap-3">
+          <span>Menampilkan: <strong id="rekap-count-shown" class="text-slate-900 font-black">0</strong> Siswa</span>
+          <span>•</span>
+          <span class="text-emerald-700 font-bold">🟢 <span id="rekap-count-present">0</span> Ada di Ruangan</span>
+          <span>•</span>
+          <span class="text-rose-700 font-bold">🔴 <span id="rekap-count-uncollected">0</span> Belum Dikumpulkan</span>
           <span>•</span>
           <span class="text-amber-700 font-semibold">⚡ <span id="rekap-count-no-charger">0</span> Tanpa Charger</span>
           <span>•</span>
