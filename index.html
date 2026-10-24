@@ -224,10 +224,24 @@
           </div>
         </div>
 
-        <!-- Mobile Horizontal Scroll Hint (Visible only on < sm) -->
-        <div class="flex sm:hidden items-center justify-between text-[11px] text-slate-500 bg-indigo-50/60 px-3 py-1.5 rounded-xl border border-indigo-100">
-          <span>👉 <strong>Geser denah</strong> ke samping untuk melihat seluruh meja</span>
-          <span class="text-indigo-600 font-bold">↔️</span>
+        <!-- Toolbar: Mobile Scroll Hint & Quick Desk Filter -->
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <!-- Mobile Horizontal Scroll Hint -->
+          <div class="flex sm:hidden items-center justify-between text-[11px] text-slate-500 bg-indigo-50/60 px-3 py-1.5 rounded-xl border border-indigo-100 flex-1">
+            <span>👉 <strong>Geser denah</strong> untuk melihat seluruh meja</span>
+            <span class="text-indigo-600 font-bold">↔️</span>
+          </div>
+
+          <!-- Quick Desk Filter -->
+          <div class="flex items-center gap-1 bg-slate-100 p-0.5 rounded-xl text-xs font-semibold">
+            <button id="btn-filter-desk-all" class="px-2.5 py-1 rounded-lg bg-white text-indigo-700 shadow-2xs font-bold text-[11px] sm:text-xs transition">
+              Semua Meja
+            </button>
+            <button id="btn-filter-desk-empty" class="px-2.5 py-1 rounded-lg text-slate-600 hover:text-slate-900 font-semibold text-[11px] sm:text-xs transition flex items-center gap-1">
+              <span>Hanya Meja Kosong</span>
+              <span id="badge-empty-desk-count" class="px-1.5 py-0.2 rounded-full bg-amber-200 text-amber-900 text-[10px] font-bold">0</span>
+            </button>
+          </div>
         </div>
 
         <!-- DYNAMIC DESK MATRIX CONTAINER -->
@@ -614,7 +628,18 @@
         
         <!-- Assigned Laptop Picker / Status -->
         <div class="flex flex-col gap-1.5">
-          <label class="font-bold text-slate-700">Laptop yang Dialokasikan:</label>
+          <!-- Quick Room Backup Suggestion Chips -->
+        <div id="modal-room-backup-chips-wrapper" class="hidden flex-col gap-1.5 p-2.5 rounded-xl bg-amber-50/80 border border-amber-200">
+          <span class="text-[10px] font-bold text-amber-900 uppercase tracking-wider flex items-center gap-1">
+            <i data-lucide="zap" class="w-3.5 h-3.5 text-amber-600"></i>
+            <span>Pilihan Cepat Cadangan Ruangan Ini (Prioritas):</span>
+          </span>
+          <div id="modal-room-backup-chips" class="flex flex-wrap gap-1.5">
+            <!-- Chips rendered via JS -->
+          </div>
+        </div>
+
+        <label class="font-bold text-slate-700">Laptop yang Dialokasikan:</label>
           <div class="flex gap-2">
             <select id="modal-laptop-select" class="flex-1 bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 font-medium text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none">
               <option value="">-- Pilih Laptop dari Pool / Cadangan --</option>
@@ -814,6 +839,6 @@
 
   <!-- LOAD STATIC DATA & APP SCRIPTS -->
   <script src="data/roomsData.js?v=20261025_004"></script>
-  <script src="js/app.js?v=20261025_006"></script>
+  <script src="js/app.js?v=20261025_007"></script>
 </body>
 </html>

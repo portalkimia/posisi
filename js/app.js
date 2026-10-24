@@ -38,7 +38,10 @@
   let rekapOnlyUncollected = false;
 
   // Pool Drawer Sort & Filter State
-  let poolSortOption = "room-asc"; // 'room-asc' | 'room-current-first' | 'name-asc' | 'ready-first'
+  let poolSortOption = "room-asc";
+  let deskViewFilter = "all"; // "all" | "empty-only"
+  let selectedLaptopForPicker = null; // idLaptop currently being assigned
+  let deskPickerFilter = "empty-only"; // "empty-only" | "all" in modal-pick-desk // 'room-asc' | 'room-current-first' | 'name-asc' | 'ready-first'
   let poolRoomFilter = "ALL";     // 'ALL' | 'R1' | ... | 'Ruang Guru'
 
   // Selected desk for inspection modal
@@ -76,7 +79,7 @@
 
   // --- LOCAL STATE LOADING & AUTO SEEDING ---
   const CACHE_VERSION_KEY = "tka_cache_version";
-  const CURRENT_CACHE_VERSION = "20261025_006";
+  const CURRENT_CACHE_VERSION = "20261025_007";
 
   function loadLocalState() {
     const savedVersion = localStorage.getItem(CACHE_VERSION_KEY);
@@ -1428,7 +1431,7 @@ function getRoomBackupsStore(date, session, room) {
       if (btnAssign) {
         btnAssign.addEventListener("click", (e) => {
           e.stopPropagation();
-          quickAssignToFirstAvailableDesk(laptop.idLaptop);
+          openDeskPickerModal(laptop.idLaptop);
         });
       }
 
@@ -1999,6 +2002,145 @@ function getRoomBackupsStore(date, session, room) {
       hasCharger: fromAssignment.hasCharger,
       catatan: fromAssignment.catatan
     });
+  }
+
+  
+  // --- INTERACTIVE DESK PICKER MODAL (PILIH MEJA TUJUAN) ---
+  function openDeskPickerModal(idLaptop) {
+    const roomConf = ROOMS_DATA[activeRoom];
+    if (!roomConf || roomConf.isBackupCenter) {
+      showToast(`Ruangan ${activeRoom} adalah pusat cadangan dan tidak memiliki meja ujian. Pilih Ruang 1-11 untuk memasang ke meja.`, "warning");
+      return;
+    }
+
+    selectedLaptopForPicker = idLaptop;
+    const modal = document.getElementById("modal-pick-desk");
+    if (!modal) return;
+
+    // Find laptop details
+    let laptop = laptopPool.find((l) => l.idLaptop === idLaptop);
+    if (!laptop) {
+      const backups = getEffectiveRoomBackups(activeDate, activeSession, activeRoom);
+      laptop = backups.find((b) => b.idLaptop === idLaptop);
+    }
+    if (!laptop) {
+      const dateList = rekapLaptopsByDate[activeDate] || [];
+      const r = dateList.find((item) => (item.idLaptop && item.idLaptop === idLaptop) || item.nis === idLaptop || `LP-${item.nis}` === idLaptop);
+      if (r) {
+        laptop = {
+          idLaptop: idLaptop,
+          labelLaptop: r.nama,
+          pemilikLaptop: r.nama,
+          isReady: r.laptop !== "TIDAK AMAN",
+          hasCharger: r.charger !== "TIDAK ADA",
+          ruangLaptop: r.ruangLaptop
+        };
+      }
+    }
+
+    const titleRoom = document.getElementById("modal-pick-desk-room-badge");
+    if (titleRoom) titleRoom.textContent = `${activeRoom} • ${activeDate} • ${activeSession}`;
+
+    const infoEl = document.getElementById("modal-pick-desk-laptop-info");
+    if (infoEl) {
+      const owner = laptop ? (laptop.pemilikLaptop || laptop.labelLaptop) : idLaptop;
+      const isReady = laptop ? laptop.isReady : true;
+      const rLoc = laptop ? (laptop.ruangLaptop || activeRoom) : activeRoom;
+      infoEl.innerHTML = `
+        <span class="font-bold text-slate-900">${owner}</span>
+        <span class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-indigo-50 text-indigo-700 border border-indigo-200">${idLaptop}</span>
+        <span class="px-1.5 py-0.5 rounded text-[10px] font-bold ${isReady ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-amber-50 text-amber-700 border border-amber-200"}">
+          ${isReady ? "✅ AMAN" : "⚠️ TIDAK AMAN"}
+        </span>
+        <span class="text-[10px] text-slate-500 font-medium">📍 Lokasi: ${rLoc}</span>
+      `;
+    }
+
+    renderDeskPickerGrid();
+    modal.classList.remove("hidden");
+    refreshIcons();
+  }
+
+  function renderDeskPickerGrid() {
+    const gridContainer = document.getElementById("modal-pick-desk-grid");
+    if (!gridContainer) return;
+    gridContainer.innerHTML = "";
+
+    const roomConf = ROOMS_DATA[activeRoom];
+    if (!roomConf) return;
+
+    const roomAssignments = getEffectiveRoomAssignments(activeDate, activeSession, activeRoom);
+
+    for (let d = 1; d <= roomConf.totalDesks; d++) {
+      const cur = roomAssignments[d];
+      const isOccupied = Boolean(cur && cur.idLaptop && !cur.unassigned);
+
+      if (deskPickerFilter === "empty-only" && isOccupied) {
+        continue;
+      }
+
+      const studentName = getStudentName(activeRoom, d, activeSession);
+      const card = document.createElement("div");
+
+      if (!isOccupied) {
+        card.className = "bg-emerald-50/70 hover:bg-emerald-100 border-2 border-emerald-300 rounded-xl p-3 flex items-center justify-between gap-2 cursor-pointer transition shadow-2xs hover:shadow-xs active:scale-95";
+        card.innerHTML = `
+          <div class="flex flex-col min-w-0">
+            <div class="flex items-center gap-1.5">
+              <span class="px-2 py-0.5 rounded-md bg-slate-900 text-white font-black text-xs">Meja ${d}</span>
+              <span class="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">KOSONG</span>
+            </div>
+            <span class="text-xs font-semibold text-slate-700 truncate mt-1">Peserta Sesi: ${studentName || "(Kosong)"}</span>
+          </div>
+          <button type="button" class="px-2.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-2xs transition flex-shrink-0 flex items-center gap-1">
+            <i data-lucide="check" class="w-3.5 h-3.5"></i>
+            <span>Pilih</span>
+          </button>
+        `;
+      } else {
+        card.className = "bg-slate-50 hover:bg-amber-50 border border-slate-200 hover:border-amber-300 rounded-xl p-3 flex items-center justify-between gap-2 cursor-pointer transition active:scale-95";
+        card.innerHTML = `
+          <div class="flex flex-col min-w-0">
+            <div class="flex items-center gap-1.5">
+              <span class="px-2 py-0.5 rounded-md bg-slate-700 text-white font-black text-xs">Meja ${d}</span>
+              <span class="text-[10px] font-bold text-slate-500 bg-slate-200 px-1.5 py-0.5 rounded">TERISI</span>
+            </div>
+            <span class="text-xs font-semibold text-slate-700 truncate mt-1">Peserta: ${studentName || "(Kosong)"}</span>
+            <span class="text-[11px] text-amber-800 font-medium truncate">Laptop: ${cur.pemilikLaptop || cur.idLaptop}</span>
+          </div>
+          <button type="button" class="px-2.5 py-1.5 rounded-lg bg-white hover:bg-amber-100 text-slate-700 hover:text-amber-900 border border-slate-300 hover:border-amber-400 font-bold text-xs transition flex-shrink-0">
+            Ganti
+          </button>
+        `;
+      }
+
+      card.addEventListener("click", () => {
+        const targetId = selectedLaptopForPicker;
+        const modal = document.getElementById("modal-pick-desk");
+        if (modal) modal.classList.add("hidden");
+        
+        assignLaptopToDesk(activeRoom, d, targetId);
+
+        // Smooth scroll to denah meja to highlight the desk
+        const deskSection = document.getElementById("workspace-desk-section");
+        if (deskSection) {
+          deskSection.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+      });
+
+      gridContainer.appendChild(card);
+    }
+
+    if (gridContainer.children.length === 0) {
+      gridContainer.innerHTML = `
+        <div class="col-span-full py-8 text-center text-slate-400 text-xs flex flex-col items-center gap-1.5">
+          <i data-lucide="check-circle" class="w-6 h-6 text-emerald-500"></i>
+          <span>Semua meja di ${activeRoom} (${activeSession}) sudah terisi. Klik tab "Semua Meja" di atas jika ingin menukar atau mengganti meja terisi.</span>
+        </div>
+      `;
+    }
+
+    refreshIcons();
   }
 
   function quickAssignToFirstAvailableDesk(idLaptop) {
@@ -2657,30 +2799,87 @@ function getRoomBackupsStore(date, session, room) {
       });
     }
 
-    // Mobile Segmented Toggle (Denah Meja vs Laptop Tersedia)
+    // Mobile Smooth Scrolling Navigation (Denah Meja <-> Laptop Tersedia)
     const mobileToggleDesks = document.getElementById("mobile-toggle-desks");
     const mobileTogglePool = document.getElementById("mobile-toggle-pool");
+    const btnScrollToDesks = document.getElementById("btn-scroll-to-desks");
     const deskSection = document.getElementById("workspace-desk-section");
     const poolSection = document.getElementById("workspace-pool-section");
 
-    if (mobileToggleDesks && mobileTogglePool && deskSection && poolSection) {
+    if (mobileTogglePool && poolSection) {
+      mobileTogglePool.addEventListener("click", () => {
+        poolSection.scrollIntoView({ behavior: "smooth", block: "start" });
+        if (mobileToggleDesks) mobileToggleDesks.className = "flex-1 py-2 px-3 rounded-lg text-slate-600 hover:text-slate-900 flex items-center justify-center gap-1.5 transition";
+        mobileTogglePool.className = "flex-1 py-2 px-3 rounded-lg bg-white text-indigo-700 shadow-xs flex items-center justify-center gap-1.5 transition";
+      });
+    }
+
+    if (mobileToggleDesks && deskSection) {
       mobileToggleDesks.addEventListener("click", () => {
-        deskSection.classList.remove("hidden");
-        poolSection.classList.add("hidden");
+        deskSection.scrollIntoView({ behavior: "smooth", block: "start" });
+        if (mobileTogglePool) mobileTogglePool.className = "flex-1 py-2 px-3 rounded-lg text-slate-600 hover:text-slate-900 flex items-center justify-center gap-1.5 transition";
         mobileToggleDesks.className = "flex-1 py-2 px-3 rounded-lg bg-white text-indigo-700 shadow-xs flex items-center justify-center gap-1.5 transition";
-        mobileTogglePool.className = "flex-1 py-2 px-3 rounded-lg text-slate-600 hover:text-slate-900 flex items-center justify-center gap-1.5 transition";
+      });
+    }
+
+    if (btnScrollToDesks && deskSection) {
+      btnScrollToDesks.addEventListener("click", () => {
+        deskSection.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    }
+
+    // Quick Desk Filters (Semua Meja vs Hanya Meja Kosong)
+    const btnFilterDeskAll = document.getElementById("btn-filter-desk-all");
+    const btnFilterDeskEmpty = document.getElementById("btn-filter-desk-empty");
+
+    if (btnFilterDeskAll && btnFilterDeskEmpty) {
+      btnFilterDeskAll.addEventListener("click", () => {
+        deskViewFilter = "all";
+        btnFilterDeskAll.className = "px-2.5 py-1 rounded-lg bg-white text-indigo-700 shadow-2xs font-bold text-[11px] sm:text-xs transition";
+        btnFilterDeskEmpty.className = "px-2.5 py-1 rounded-lg text-slate-600 hover:text-slate-900 font-semibold text-[11px] sm:text-xs transition flex items-center gap-1";
+        renderDeskGrid(ROOMS_DATA[activeRoom]);
       });
 
-      mobileTogglePool.addEventListener("click", () => {
-        deskSection.classList.add("hidden");
-        poolSection.classList.remove("hidden");
-        mobileTogglePool.className = "flex-1 py-2 px-3 rounded-lg bg-white text-indigo-700 shadow-xs flex items-center justify-center gap-1.5 transition";
-        mobileToggleDesks.className = "flex-1 py-2 px-3 rounded-lg text-slate-600 hover:text-slate-900 flex items-center justify-center gap-1.5 transition";
+      btnFilterDeskEmpty.addEventListener("click", () => {
+        deskViewFilter = "empty-only";
+        btnFilterDeskEmpty.className = "px-2.5 py-1 rounded-lg bg-white text-indigo-700 shadow-2xs font-bold text-[11px] sm:text-xs transition flex items-center gap-1";
+        btnFilterDeskAll.className = "px-2.5 py-1 rounded-lg text-slate-600 hover:text-slate-900 font-semibold text-[11px] sm:text-xs transition";
+        renderDeskGrid(ROOMS_DATA[activeRoom]);
+      });
+    }
+
+    // Modal Pick Desk Controls
+    const modalPickDesk = document.getElementById("modal-pick-desk");
+    const btnPickClose = document.getElementById("modal-pick-desk-close");
+    const btnPickCancel = document.getElementById("modal-pick-desk-cancel");
+    const filterPickEmpty = document.getElementById("filter-pick-empty-only");
+    const filterPickAll = document.getElementById("filter-pick-all");
+
+    if (btnPickClose && modalPickDesk) {
+      btnPickClose.addEventListener("click", () => modalPickDesk.classList.add("hidden"));
+    }
+    if (btnPickCancel && modalPickDesk) {
+      btnPickCancel.addEventListener("click", () => modalPickDesk.classList.add("hidden"));
+    }
+
+    if (filterPickEmpty && filterPickAll) {
+      filterPickEmpty.addEventListener("click", () => {
+        deskPickerFilter = "empty-only";
+        filterPickEmpty.className = "px-2.5 py-1 rounded-md bg-white text-indigo-700 shadow-2xs font-bold text-xs transition";
+        filterPickAll.className = "px-2.5 py-1 rounded-md text-slate-600 hover:text-slate-900 font-semibold text-xs transition";
+        renderDeskPickerGrid();
+      });
+
+      filterPickAll.addEventListener("click", () => {
+        deskPickerFilter = "all";
+        filterPickAll.className = "px-2.5 py-1 rounded-md bg-white text-indigo-700 shadow-2xs font-bold text-xs transition";
+        filterPickEmpty.className = "px-2.5 py-1 rounded-md text-slate-600 hover:text-slate-900 font-semibold text-xs transition";
+        renderDeskPickerGrid();
       });
     }
 
     // Modal backdrop click to dismiss on mobile touch
-    ["modal-desk", "modal-add-laptop", "modal-settings"].forEach((modalId) => {
+    ["modal-desk", "modal-add-laptop", "modal-settings", "modal-pick-desk"].forEach((modalId) => {
       const modalEl = document.getElementById(modalId);
       if (modalEl) {
         modalEl.addEventListener("click", (e) => {
