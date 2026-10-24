@@ -71,7 +71,20 @@
   });
 
   // --- LOCAL STATE LOADING & AUTO SEEDING ---
+  const CACHE_VERSION_KEY = "tka_cache_version";
+  const CURRENT_CACHE_VERSION = "20261025_001";
+
   function loadLocalState() {
+    const savedVersion = localStorage.getItem(CACHE_VERSION_KEY);
+    if (savedVersion !== CURRENT_CACHE_VERSION) {
+      // Clear old cached state to force fresh load of verified 462 data from Google Sheets
+      localStorage.removeItem(STORAGE_KEY_REKAP_BY_DATE);
+      localStorage.removeItem(STORAGE_KEY_ASSIGNMENTS);
+      localStorage.removeItem(STORAGE_KEY_POOL);
+      localStorage.removeItem(STORAGE_KEY_BACKUPS);
+      localStorage.setItem(CACHE_VERSION_KEY, CURRENT_CACHE_VERSION);
+    }
+
     // 1. Load Multi-Day Assignments
     try {
       const stored = localStorage.getItem(STORAGE_KEY_ASSIGNMENTS);
