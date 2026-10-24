@@ -192,7 +192,7 @@
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6 items-start">
       
       <!-- LEFT / CENTER: DESK SEATING GRID & ROOM BACKUPS -->
-      <div id="workspace-desk-section" class="lg:col-span-8 xl:col-span-9 bg-white rounded-2xl border border-slate-200 p-3.5 sm:p-6 shadow-sm flex flex-col gap-4 sm:gap-5">
+      <div id="workspace-desk-section" class="lg:col-span-8 xl:col-span-9 bg-white rounded-2xl border border-slate-200 p-3.5 sm:p-6 shadow-sm flex flex-col gap-4 sm:gap-5 overflow-hidden">
         
         <!-- MEJA PENGAWAS BANNER (Hidden if Ruang Guru is selected) -->
         <div id="meja-pengawas-banner" class="w-full max-w-md mx-auto py-2 sm:py-2.5 px-4 sm:px-6 rounded-xl border-2 border-slate-800 bg-slate-50 text-slate-800 font-bold text-center tracking-wider text-xs sm:text-sm shadow-sm flex items-center justify-center gap-2">
@@ -463,12 +463,12 @@
 
     <!-- The Spreadsheet Table Wrapper -->
     <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
-      <div class="overflow-x-auto max-h-[calc(100vh-300px)] overflow-y-auto">
-        <table class="w-full text-left text-xs border-collapse">
+      <div class="rekap-table-wrapper overflow-x-auto max-h-[calc(100vh-280px)] overflow-y-auto w-full">
+        <table class="w-full min-w-[950px] text-left text-xs border-collapse">
           <thead class="bg-slate-900 text-white sticky top-0 z-10 select-none text-[11px] font-bold uppercase tracking-wider">
             <tr>
               <th class="py-3 px-3 border-b border-slate-800">NIS</th>
-              <th class="py-3 px-3 border-b border-slate-800 col-sticky-nama">NAMA</th>
+              <th class="py-3 px-3 border-b border-slate-800">NAMA</th>
               <th class="py-3 px-2 border-b border-slate-800 text-center">KELAS</th>
               <th class="py-3 px-2 border-b border-slate-800 text-center">RUANG KELAS</th>
               <th class="py-3 px-2 border-b border-slate-800 text-center">RUANG LAPTOP</th>
@@ -814,6 +814,6 @@
 
   <!-- LOAD STATIC DATA & APP SCRIPTS -->
   <script src="data/roomsData.js?v=20261025_004"></script>
-  <script src="js/app.js?v=20261025_005"></script>
+  <script src="js/app.js?v=20261025_006"></script>
 </body>
 </html>

@@ -76,7 +76,7 @@
 
   // --- LOCAL STATE LOADING & AUTO SEEDING ---
   const CACHE_VERSION_KEY = "tka_cache_version";
-  const CURRENT_CACHE_VERSION = "20261025_005";
+  const CURRENT_CACHE_VERSION = "20261025_006";
 
   function loadLocalState() {
     const savedVersion = localStorage.getItem(CACHE_VERSION_KEY);
@@ -560,8 +560,8 @@ function getRoomBackupsStore(date, session, room) {
     const numCols = grid[0] ? grid[0].length : 5;
 
     const gridEl = document.createElement("div");
-    gridEl.className = "grid gap-3.5 mx-auto justify-center";
-    gridEl.style.gridTemplateColumns = `repeat(${numCols}, minmax(130px, 1fr))`;
+    gridEl.className = "grid gap-2 sm:gap-3.5 w-max sm:w-auto sm:mx-auto justify-start sm:justify-center p-1 sm:p-2";
+    gridEl.style.gridTemplateColumns = `repeat(${numCols}, minmax(110px, 1fr))`;
     gridEl.style.maxWidth = `${numCols * 170}px`;
 
     const roomAssignments = getEffectiveRoomAssignments(activeDate, activeSession, roomConf.name);
@@ -581,6 +581,7 @@ function getRoomBackupsStore(date, session, room) {
     });
 
     container.appendChild(gridEl);
+    container.scrollLeft = 0;
   }
 
   function createDeskCard(roomName, deskNo, roomAssignments) {
@@ -1574,7 +1575,7 @@ function getRoomBackupsStore(date, session, room) {
 
       tr.innerHTML = `
         <td class="py-2.5 px-3 font-mono font-bold text-slate-700 whitespace-nowrap">${row.nis || "-"}</td>
-        <td class="py-2.5 px-3 font-bold text-slate-900 whitespace-nowrap col-sticky-nama">${row.nama}</td>
+        <td class="py-2.5 px-3 font-bold text-slate-900 whitespace-nowrap">${row.nama}</td>
         <td class="py-2.5 px-2 text-center whitespace-nowrap text-slate-600 font-semibold">${row.kelas || "-"}</td>
         <td class="py-2.5 px-2 text-center whitespace-nowrap">
           <span class="px-2 py-0.5 rounded-md font-bold text-slate-700 bg-slate-100 border border-slate-200">

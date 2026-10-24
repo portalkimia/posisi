@@ -66,18 +66,3 @@ button, select, input {
   -webkit-overflow-scrolling: touch;
   scroll-behavior: smooth;
 }
-
-/* Sticky column on mobile data table for student name */
-@media (max-width: 768px) {
-  .col-sticky-nama {
-    position: sticky !important;
-    left: 0 !important;
-    z-index: 5;
-    background-color: inherit;
-    box-shadow: 2px 0 6px -2px rgba(0, 0, 0, 0.15);
-  }
-  thead th.col-sticky-nama {
-    background-color: #0f172a !important;
-    z-index: 20 !important;
-  }
-}
