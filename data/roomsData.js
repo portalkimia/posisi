@@ -386,7 +386,99 @@ const ROOMS_DATA = {
   }
 };
 
+/**
+ * Metadata Peserta & Rekap Laptop Siswa
+ * Diambil langsung dari sampel data riil pengawas
+ */
+const KNOWN_STUDENTS_META = {
+  "Abdul Hafidz Al Anshory": { nis: "24110061", kelas: "XII A1", ruangKelas: "R1", ruangLaptop: "R1", keberadaan: true, charger: "ADA", laptop: "AMAN", keterangan: "" },
+  "Achmad Rafie Kurniawan": { nis: "24110099", kelas: "XII A1", ruangKelas: "R1", ruangLaptop: "R1", keberadaan: true, charger: "ADA", laptop: "AMAN", keterangan: "" },
+  "Aflah Kenzie Nur Iskandar": { nis: "24110227", kelas: "XII A1", ruangKelas: "R1", ruangLaptop: "R1", keberadaan: true, charger: "ADA", laptop: "AMAN", keterangan: "" },
+  "Ahmad Nafisun Nufus": { nis: "24110076", kelas: "XII A1", ruangKelas: "R1", ruangLaptop: "R1", keberadaan: true, charger: "ADA", laptop: "AMAN", keterangan: "" },
+  "Ahmad Syahrizal Rusliyanto": { nis: "24110159", kelas: "XII A1", ruangKelas: "R1", ruangLaptop: "R1", keberadaan: true, charger: "ADA", laptop: "AMAN", keterangan: "" },
+  "Alif Adetiyah Aliansah": { nis: "24110144", kelas: "XII A1", ruangKelas: "R1", ruangLaptop: "R1", keberadaan: true, charger: "ADA", laptop: "AMAN", keterangan: "" },
+  "Baynardh Damara Iskandar": { nis: "24110094", kelas: "XII A1", ruangKelas: "R1", ruangLaptop: "R1", keberadaan: false, charger: "ADA", laptop: "AMAN", keterangan: "" },
+  "Elang Raditya Syahdan": { nis: "24110190", kelas: "XII A1", ruangKelas: "R1", ruangLaptop: "R1", keberadaan: true, charger: "TIDAK ADA", laptop: "AMAN", keterangan: "Charger tertinggal di rumah" },
+  "Fadel Muhammad Ibrahim Fachruroji": { nis: "24110013", kelas: "XII A1", ruangKelas: "R1", ruangLaptop: "R1", keberadaan: true, charger: "ADA", laptop: "AMAN", keterangan: "" },
+  "Farrel Isnanda Bakti": { nis: "24110217", kelas: "XII A1", ruangKelas: "R1", ruangLaptop: "R1", keberadaan: true, charger: "ADA", laptop: "AMAN", keterangan: "" },
+  "Fathir Arif El Jauza": { nis: "24110243", kelas: "XII A1", ruangKelas: "R1", ruangLaptop: "R1", keberadaan: true, charger: "ADA", laptop: "AMAN", keterangan: "" },
+  "Kevin Rahiza Rahman": { nis: "24110238", kelas: "XII A1", ruangKelas: "R1", ruangLaptop: "R1", keberadaan: true, charger: "ADA", laptop: "AMAN", keterangan: "" },
+  "M. Kelvin Ainun Nurul Pratama": { nis: "24110128", kelas: "XII A1", ruangKelas: "R1", ruangLaptop: "R1", keberadaan: true, charger: "ADA", laptop: "AMAN", keterangan: "" },
+  "Mohammad Naufal Afriansyah": { nis: "24110203", kelas: "XII A1", ruangKelas: "R1", ruangLaptop: "R1", keberadaan: true, charger: "ADA", laptop: "AMAN", keterangan: "" },
+  "Muhammad Akhdan Zhafif": { nis: "24110073", kelas: "XII A1", ruangKelas: "R1", ruangLaptop: "R1", keberadaan: false, charger: "ADA", laptop: "AMAN", keterangan: "" },
+  "Muhammad Daniswara Kenzie": { nis: "24110082", kelas: "XII A1", ruangKelas: "R1", ruangLaptop: "R1", keberadaan: true, charger: "ADA", laptop: "AMAN", keterangan: "" },
+  "Muhammad Edgar Hidayatullah": { nis: "24110040", kelas: "XII A1", ruangKelas: "R1", ruangLaptop: "R1", keberadaan: true, charger: "ADA", laptop: "AMAN", keterangan: "" },
+  "Muhammad Hilal Wibowo": { nis: "24110025", kelas: "XII A1", ruangKelas: "R1", ruangLaptop: "R1", keberadaan: true, charger: "ADA", laptop: "AMAN", keterangan: "" },
+  "Muhammad Iqbal Farabi": { nis: "24110232", kelas: "XII A1", ruangKelas: "R1", ruangLaptop: "R1", keberadaan: true, charger: "ADA", laptop: "AMAN", keterangan: "" },
+  "Muhammad Rafi Aldiansyah": { nis: "24110117", kelas: "XII A1", ruangKelas: "R1", ruangLaptop: "R1", keberadaan: true, charger: "ADA", laptop: "AMAN", keterangan: "" },
+  "Ahmad Farrel Avriansyah": { nis: "24110016", kelas: "XII IUPP 2", ruangKelas: "R11", ruangLaptop: "R1", keberadaan: true, charger: "ADA", laptop: "AMAN", keterangan: "Laptop siswa R11 berada di R1" },
+  "Firdaus Haryo Mukti": { nis: "24110102", kelas: "XII IUPP 2", ruangKelas: "R11", ruangLaptop: "R1", keberadaan: true, charger: "ADA", laptop: "AMAN", keterangan: "Laptop siswa R11 berada di R1" },
+  "Jibril Burhanuddin At Tauhid": { nis: "24110131", kelas: "XII IUPP 2", ruangKelas: "R11", ruangLaptop: "R1", keberadaan: true, charger: "ADA", laptop: "AMAN", keterangan: "Laptop siswa R11 berada di R1" }
+};
+
+/**
+ * Generate Rekap Laptop Siswa Master Dataset
+ */
+function generateMasterRekapList() {
+  const list = [];
+  let nisCounter = 24110300;
+
+  const kelasOptions = ["XII A1", "XII A2", "XII A3", "XII A4", "XII IUPP 1", "XII IUPP 2", "XII S1", "XII S2"];
+
+  Object.keys(ROOMS_DATA).forEach((roomName) => {
+    const rCode = roomName.replace("Ruang ", "R");
+    const conf = ROOMS_DATA[roomName];
+
+    for (let deskNo = 1; deskNo <= conf.totalDesks; deskNo++) {
+      const roster = conf.roster[deskNo];
+      if (!roster) continue;
+
+      ["sesi1", "sesi2", "sesi3"].forEach((sKey, sIdx) => {
+        const studentName = roster[sKey];
+        if (!studentName || !studentName.trim()) return;
+
+        const sesiNum = sIdx + 1;
+        const known = KNOWN_STUDENTS_META[studentName];
+
+        if (known) {
+          list.push({
+            nis: known.nis,
+            nama: studentName,
+            kelas: known.kelas,
+            sesi: sesiNum,
+            ruangKelas: known.ruangKelas,
+            ruangLaptop: known.ruangLaptop,
+            noMeja: deskNo,
+            keberadaan: known.keberadaan,
+            charger: known.charger,
+            laptop: known.laptop,
+            keterangan: known.keterangan
+          });
+        } else {
+          nisCounter++;
+          const defaultKelas = kelasOptions[(deskNo + sesiNum) % kelasOptions.length];
+          list.push({
+            nis: String(nisCounter),
+            nama: studentName,
+            kelas: defaultKelas,
+            sesi: sesiNum,
+            ruangKelas: rCode,
+            ruangLaptop: rCode, // Default sama dengan ruang kelas kecuali dipindahkan
+            noMeja: deskNo,
+            keberadaan: true,
+            charger: "ADA",
+            laptop: "AMAN",
+            keterangan: ""
+          });
+        }
+      });
+    }
+  });
+
+  return list;
+}
+
 // Export for Node/CommonJS (if testing) or window for browser SPA
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { ROOMS_DATA };
+  module.exports = { ROOMS_DATA, KNOWN_STUDENTS_META, generateMasterRekapList };
 }

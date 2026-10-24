@@ -50,15 +50,19 @@
           </div>
         </div>
 
-        <!-- Navigation Tabs: Denah vs Rekap -->
+        <!-- Navigation Tabs: Denah vs Rekap Laptop Siswa vs Overview -->
         <div class="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-medium">
           <button id="tab-denah" class="tab-btn px-3 py-1.5 rounded-lg font-semibold bg-white text-indigo-700 shadow-sm transition-all flex items-center gap-1.5">
             <i data-lucide="layout-grid" class="w-3.5 h-3.5"></i>
-            <span>Denah Ruang</span>
+            <span>Denah Meja</span>
+          </button>
+          <button id="tab-tabel-laptop" class="tab-btn px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 transition-all flex items-center gap-1.5">
+            <i data-lucide="table" class="w-3.5 h-3.5"></i>
+            <span>Rekap Laptop Siswa</span>
           </button>
           <button id="tab-rekap" class="tab-btn px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 transition-all flex items-center gap-1.5">
             <i data-lucide="bar-chart-3" class="w-3.5 h-3.5"></i>
-            <span>Rekap & Overview</span>
+            <span>Overview Ruang</span>
           </button>
         </div>
 
@@ -76,9 +80,9 @@
           </button>
 
           <!-- Master CSV Export -->
-          <button id="btn-export-csv" class="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition" title="Unduh CSV Checklist">
+          <button id="btn-export-csv" class="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition" title="Unduh CSV Format Rekap">
             <i data-lucide="download" class="w-3.5 h-3.5"></i>
-            <span>Export CSV</span>
+            <span>Export Rekap CSV</span>
           </button>
         </div>
 
@@ -121,7 +125,7 @@
         </div>
         <div class="flex items-center gap-1.5 text-slate-600">
           <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
-          <span>Siap: <strong id="metric-ready" class="text-emerald-700">0</strong></span>
+          <span>Aman: <strong id="metric-ready" class="text-emerald-700">0</strong></span>
         </div>
         <div class="flex items-center gap-1.5 text-slate-600">
           <span class="w-2 h-2 rounded-full bg-amber-500"></span>
@@ -134,7 +138,7 @@
     <!-- MAIN TWO-COLUMN WORKSPACE: DESK GRID & LAPTOP POOL -->
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
       
-      <!-- LEFT / CENTER: DESK SEATING GRID (lg:col-span-8 or 9) -->
+      <!-- LEFT / CENTER: DESK SEATING GRID -->
       <div class="lg:col-span-8 xl:col-span-9 bg-white rounded-2xl border border-slate-200 p-4 sm:p-6 shadow-sm flex flex-col gap-5">
         
         <!-- MEJA PENGAWAS BANNER (Matches PDF layout) -->
@@ -160,7 +164,7 @@
 
       </div>
 
-      <!-- RIGHT: LAPTOP POOL DRAWER / DOCK (lg:col-span-4 or 3) -->
+      <!-- RIGHT: LAPTOP POOL DRAWER / DOCK -->
       <div class="lg:col-span-4 xl:col-span-3 flex flex-col gap-4">
         
         <div class="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm flex flex-col gap-3 sticky top-24">
@@ -189,7 +193,7 @@
           <!-- Pool Filter Chips -->
           <div class="flex items-center gap-1 text-[11px]">
             <button class="filter-pool-btn px-2 py-0.5 rounded-md font-semibold bg-slate-200 text-slate-800" data-filter="all">Semua</button>
-            <button class="filter-pool-btn px-2 py-0.5 rounded-md text-slate-500 hover:bg-slate-100" data-filter="ready">Siap Saja</button>
+            <button class="filter-pool-btn px-2 py-0.5 rounded-md text-slate-500 hover:bg-slate-100" data-filter="ready">Aman Saja</button>
             <button class="filter-pool-btn px-2 py-0.5 rounded-md text-slate-500 hover:bg-slate-100" data-filter="charger">Ada Charger</button>
           </div>
 
@@ -212,7 +216,135 @@
 
   </main>
 
-  <!-- VIEW 2: REKAP & OVERVIEW PANITIA (MASTER DASHBOARD) -->
+  <!-- VIEW 2: REKAP LAPTOP SISWA (MATCHES SPREADSHEET TABLE FORMAT) -->
+  <main id="view-tabel-laptop" class="hidden flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 flex flex-col gap-5">
+    
+    <!-- Table Header & Controls -->
+    <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex flex-col gap-4">
+      
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 class="text-lg font-black text-slate-900 tracking-tight flex items-center gap-2">
+            <span>Rekap Laptop Siswa</span>
+            <span class="text-xs font-normal text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">
+              Format Spreadsheet Realtime
+            </span>
+          </h2>
+          <p class="text-xs text-slate-500 mt-0.5">Pantau status fisik keberadaan laptop, charger, dan kelayakan perangkat lintas ruangan.</p>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <button id="btn-rekap-table-export" class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl transition">
+            <i data-lucide="download" class="w-3.5 h-3.5"></i>
+            <span>Unduh CSV Rekap</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Filters Row -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 pt-2 border-t border-slate-100 text-xs">
+        
+        <!-- Search Filter -->
+        <div class="relative lg:col-span-2">
+          <input type="text" id="rekap-filter-search" placeholder="Cari NIS, nama siswa, atau kelas..." class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 pl-8 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <i data-lucide="search" class="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2"></i>
+        </div>
+
+        <!-- Filter Ruang Laptop -->
+        <div class="flex items-center gap-2">
+          <label class="font-bold text-slate-500 whitespace-nowrap">Ruang Laptop:</label>
+          <select id="rekap-filter-ruang-laptop" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 font-medium">
+            <option value="ALL">Semua Ruang</option>
+            <option value="R1">R1</option>
+            <option value="R2">R2</option>
+            <option value="R3">R3</option>
+            <option value="R4">R4</option>
+            <option value="R5">R5</option>
+            <option value="R6">R6</option>
+            <option value="R7">R7</option>
+            <option value="R8">R8</option>
+            <option value="R9">R9</option>
+            <option value="R10">R10</option>
+            <option value="R11">R11</option>
+          </select>
+        </div>
+
+        <!-- Filter Ruang Kelas -->
+        <div class="flex items-center gap-2">
+          <label class="font-bold text-slate-500 whitespace-nowrap">Ruang Kelas:</label>
+          <select id="rekap-filter-ruang-kelas" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 font-medium">
+            <option value="ALL">Semua Ruang</option>
+            <option value="R1">R1</option>
+            <option value="R2">R2</option>
+            <option value="R3">R3</option>
+            <option value="R4">R4</option>
+            <option value="R5">R5</option>
+            <option value="R6">R6</option>
+            <option value="R7">R7</option>
+            <option value="R8">R8</option>
+            <option value="R9">R9</option>
+            <option value="R10">R10</option>
+            <option value="R11">R11</option>
+          </select>
+        </div>
+
+        <!-- Filter Quick Toggles -->
+        <div class="flex items-center gap-1.5">
+          <button id="rekap-toggle-cross" class="flex-1 px-2.5 py-2 rounded-xl border border-slate-200 bg-slate-50 hover:bg-indigo-50 hover:border-indigo-200 font-bold text-slate-600 hover:text-indigo-600 transition truncate text-center" title="Tampilkan hanya laptop yang ruangannya beda dari ruang ujian siswa">
+            🔄 Beda Ruang
+          </button>
+          <button id="rekap-toggle-issues" class="flex-1 px-2.5 py-2 rounded-xl border border-slate-200 bg-slate-50 hover:bg-rose-50 hover:border-rose-200 font-bold text-slate-600 hover:text-rose-600 transition truncate text-center" title="Tampilkan yang tanpa charger atau tidak aman">
+            ⚠️ Bermasalah
+          </button>
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- The Spreadsheet Table Wrapper -->
+    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+      <div class="overflow-x-auto max-h-[calc(100vh-280px)] overflow-y-auto">
+        <table class="w-full text-left text-xs border-collapse">
+          <thead class="bg-slate-900 text-white sticky top-0 z-10 select-none text-[11px] font-bold uppercase tracking-wider">
+            <tr>
+              <th class="py-3 px-3 border-b border-slate-800">NIS</th>
+              <th class="py-3 px-3 border-b border-slate-800">NAMA</th>
+              <th class="py-3 px-2 border-b border-slate-800 text-center">KELAS</th>
+              <th class="py-3 px-2 border-b border-slate-800 text-center">SESI</th>
+              <th class="py-3 px-2 border-b border-slate-800 text-center">RUANG KELAS</th>
+              <th class="py-3 px-2 border-b border-slate-800 text-center">RUANG LAPTOP</th>
+              <th class="py-3 px-2 border-b border-slate-800 text-center">KEBERADAAN DI RUANGAN</th>
+              <th class="py-3 px-2 border-b border-slate-800 text-center">CHARGER</th>
+              <th class="py-3 px-2 border-b border-slate-800 text-center">LAPTOP</th>
+              <th class="py-3 px-3 border-b border-slate-800">KETERANGAN / ALASAN JIKA TIDAK AMAN</th>
+              <th class="py-3 px-2 border-b border-slate-800 text-center">AKSI</th>
+            </tr>
+          </thead>
+          <tbody id="rekap-table-body" class="divide-y divide-slate-100 font-medium">
+            <!-- Populated via JS -->
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Table Footer / Summary -->
+      <div class="bg-slate-50 px-4 py-3 border-t border-slate-200 flex flex-wrap items-center justify-between text-xs text-slate-600 gap-2">
+        <div class="flex items-center gap-4">
+          <span>Menampilkan: <strong id="rekap-count-shown" class="text-slate-900">0</strong> Siswa</span>
+          <span>•</span>
+          <span class="text-amber-700 font-semibold">⚡ <span id="rekap-count-no-charger">0</span> Tanpa Charger</span>
+          <span>•</span>
+          <span class="text-rose-700 font-semibold">⚠️ <span id="rekap-count-not-safe">0</span> Tidak Aman</span>
+        </div>
+        <div class="text-[11px] text-slate-500">
+          💡 Catatan: Ceklis dan dropdown langsung tersinkron ke Google Sheets secara otomatis.
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- VIEW 3: OVERVIEW RUANG (MASTER DASHBOARD) -->
   <main id="view-rekap" class="hidden flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 flex flex-col gap-6">
     
     <!-- Master Metrics Banner -->
@@ -242,7 +374,7 @@
           <i data-lucide="check-circle-2" class="w-6 h-6"></i>
         </div>
         <div>
-          <div class="text-xs font-semibold text-slate-600">Laptop Siap TKA</div>
+          <div class="text-xs font-semibold text-slate-600">Laptop Aman TKA</div>
           <div id="rekap-total-ready" class="text-2xl font-black text-emerald-600">0</div>
         </div>
       </div>
@@ -278,7 +410,7 @@
 
   </main>
 
-  <!-- MODAL: QUICK INSPECTION & EDIT MEJA -->
+  <!-- MODAL: QUICK INSPECTION & EDIT MEJA / LAPTOP -->
   <div id="modal-desk" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
     <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-100 flex flex-col gap-5 max-h-[90vh] overflow-y-auto">
       
@@ -328,29 +460,58 @@
           </div>
         </div>
 
-        <!-- Checkbox / Toggle Flags -->
-        <div class="grid grid-cols-2 gap-3 pt-1">
-          <label class="flex items-center gap-2.5 p-3 rounded-xl border border-slate-200 bg-slate-50 cursor-pointer hover:bg-indigo-50/50 transition">
-            <input type="checkbox" id="modal-ready-toggle" class="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300">
+        <!-- Student Owner Info & Room Placement -->
+        <div class="bg-indigo-50/50 p-3 rounded-xl border border-indigo-100 flex flex-col gap-2">
+          <div class="flex items-center justify-between">
+            <span class="font-bold text-indigo-900">Pemilik & Lokasi Ruang:</span>
+            <span id="modal-cross-badge" class="hidden px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+              🔄 Lintas Ruangan
+            </span>
+          </div>
+          <div class="grid grid-cols-2 gap-2 text-xs">
             <div>
-              <span class="font-bold text-slate-900 block text-xs">Siap TKA</span>
-              <span class="text-[10px] text-slate-500">Perangkat berfungsi normal</span>
+              <span class="text-slate-500 block text-[10px]">Ruang Kelas Siswa (Ujian):</span>
+              <strong id="modal-student-ruang-kelas" class="text-slate-800">R1</strong>
             </div>
-          </label>
-
-          <label class="flex items-center gap-2.5 p-3 rounded-xl border border-slate-200 bg-slate-50 cursor-pointer hover:bg-indigo-50/50 transition">
-            <input type="checkbox" id="modal-charger-toggle" class="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300">
             <div>
-              <span class="font-bold text-slate-900 block text-xs">Ada Charger</span>
-              <span class="text-[10px] text-slate-500">Charger & colokan siap</span>
+              <span class="text-slate-500 block text-[10px]">Ruang Laptop (Fisik):</span>
+              <strong id="modal-laptop-ruang" class="text-indigo-700">R1</strong>
             </div>
-          </label>
+          </div>
         </div>
 
-        <!-- Notes / Catatan -->
+        <!-- Dropdowns for Charger & Laptop Safety (Matching Spreadsheet) -->
+        <div class="grid grid-cols-2 gap-3 pt-1">
+          <div class="flex flex-col gap-1">
+            <label class="font-bold text-slate-700">Status Charger:</label>
+            <select id="modal-charger-select" class="bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+              <option value="ADA">ADA</option>
+              <option value="TIDAK ADA">TIDAK ADA</option>
+            </select>
+          </div>
+
+          <div class="flex flex-col gap-1">
+            <label class="font-bold text-slate-700">Kondisi Laptop:</label>
+            <select id="modal-safety-select" class="bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+              <option value="AMAN">AMAN</option>
+              <option value="TIDAK AMAN">TIDAK AMAN</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Keberadaan di Ruangan Checkbox -->
+        <label class="flex items-center gap-2.5 p-3 rounded-xl border border-slate-200 bg-slate-50 cursor-pointer hover:bg-indigo-50/50 transition">
+          <input type="checkbox" id="modal-keberadaan-toggle" checked class="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300">
+          <div>
+            <span class="font-bold text-slate-900 block text-xs">Keberadaan di Ruangan</span>
+            <span class="text-[10px] text-slate-500">Centang jika fisik laptop sudah ada dan terverifikasi di ruangan</span>
+          </div>
+        </label>
+
+        <!-- Notes / Catatan Alasan Jika Tidak Aman -->
         <div class="flex flex-col gap-1.5">
-          <label for="modal-notes-input" class="font-bold text-slate-700">Catatan Teknisi / Kondisi Laptop:</label>
-          <textarea id="modal-notes-input" rows="3" placeholder="Contoh: Baterai drop wajib colok stopkontak, layar ada garis tipis, mouse eksternal siap..." class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none"></textarea>
+          <label for="modal-notes-input" class="font-bold text-slate-700">Keterangan / Alasan jika Tidak Aman:</label>
+          <textarea id="modal-notes-input" rows="2" placeholder="Contoh: Baterai bocor wajib charger, layar kedip, tombol spasi macet, dll..." class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none"></textarea>
         </div>
 
         <!-- Modal Actions -->
@@ -395,24 +556,30 @@
         </div>
 
         <div>
-          <label class="font-bold text-slate-700 block mb-1">Pemilik / Asal Perangkat:</label>
-          <input type="text" id="add-laptop-pemilik" placeholder="Contoh: Lab Komputer 1 / Siswa Mandiri" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 font-medium">
+          <label class="font-bold text-slate-700 block mb-1">Nama Pemilik Siswa / Asal Perangkat:</label>
+          <input type="text" id="add-laptop-pemilik" placeholder="Contoh: Ahmad Farrel Avriansyah / Lab Komputer" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 font-medium">
         </div>
 
         <div class="grid grid-cols-2 gap-3 pt-1">
-          <label class="flex items-center gap-2 p-2.5 rounded-xl border border-slate-200 bg-slate-50 cursor-pointer">
-            <input type="checkbox" id="add-laptop-ready" checked class="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500">
-            <span class="font-bold text-slate-800">Siap TKA</span>
-          </label>
-          <label class="flex items-center gap-2 p-2.5 rounded-xl border border-slate-200 bg-slate-50 cursor-pointer">
-            <input type="checkbox" id="add-laptop-charger" checked class="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500">
-            <span class="font-bold text-slate-800">Ada Charger</span>
-          </label>
+          <div>
+            <label class="font-bold text-slate-700 block mb-1">Status Charger:</label>
+            <select id="add-laptop-charger-select" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 font-bold text-slate-800">
+              <option value="ADA">ADA</option>
+              <option value="TIDAK ADA">TIDAK ADA</option>
+            </select>
+          </div>
+          <div>
+            <label class="font-bold text-slate-700 block mb-1">Kondisi Laptop:</label>
+            <select id="add-laptop-safety-select" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 font-bold text-slate-800">
+              <option value="AMAN">AMAN</option>
+              <option value="TIDAK AMAN">TIDAK AMAN</option>
+            </select>
+          </div>
         </div>
 
         <div>
-          <label class="font-bold text-slate-700 block mb-1">Catatan Awal:</label>
-          <input type="text" id="add-laptop-notes" placeholder="Opsional: Keterangan fisik atau kondisi" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 font-medium">
+          <label class="font-bold text-slate-700 block mb-1">Keterangan / Alasan jika Tidak Aman:</label>
+          <input type="text" id="add-laptop-notes" placeholder="Contoh: Baterai rusak, perlu colokan terus..." class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 font-medium">
         </div>
 
         <div class="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
