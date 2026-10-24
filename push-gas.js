@@ -3,6 +3,7 @@ const path = require('path');
 
 async function pushToGAS() {
   const scriptId = '1B_6zFnTxoOaXhWL0xtnDh3WIT2Gm6-ga_R5xInrhZg4jb3WlI3xRGqQb';
+  const depId = 'AKfycbwDvYEMSLq_oS8cQH8wvZRtQfqYEwTkINi6Haevbc-iOQXBNiEg6nyxBcT_vVOsChrr';
   const clasprcPath = 'C:/Users/Tito/.clasprc.json';
 
   if (!fs.existsSync(clasprcPath)) {
@@ -63,12 +64,43 @@ async function pushToGAS() {
   });
 
   const uploadData = await uploadRes.json();
-  if (uploadRes.status === 200) {
-    console.log('SUCCESS: Code.gs and appsscript.json pushed successfully to GAS project!');
-    console.log('Remote files updated:', uploadData.files.map(f => f.name + ' (' + f.type + ')').join(', '));
-  } else {
-    console.error('ERROR during push:', uploadRes.status, uploadData);
+  if (uploadRes.status !== 200) {
+    throw new Error('Upload error: ' + JSON.stringify(uploadData));
   }
+  console.log('SUCCESS: Code.gs and appsscript.json pushed successfully to HEAD.');
+
+  // Create new Version
+  console.log('Creating new version in Apps Script...');
+  const verRes = await fetch(`https://script.googleapis.com/v1/projects/${scriptId}/versions`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ description: 'Automated push & deploy' })
+  });
+  const versionData = await verRes.json();
+  console.log(`Version ${versionData.versionNumber} created.`);
+
+  // Update Deployment
+  console.log(`Updating deployment (${depId}) to version ${versionData.versionNumber}...`);
+  const updateRes = await fetch(`https://script.googleapis.com/v1/projects/${scriptId}/deployments/${depId}`, {
+    method: 'PUT',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      deploymentConfig: {
+        scriptId: scriptId,
+        versionNumber: versionData.versionNumber,
+        manifestFileName: 'appsscript',
+        description: `Live deployment v${versionData.versionNumber}`
+      }
+    })
+  });
+  const updateData = await updateRes.json();
+  console.log('SUCCESS: Live Web App deployment updated to version', versionData.versionNumber);
 }
 
 pushToGAS().catch(err => console.error('Fatal error:', err.message));

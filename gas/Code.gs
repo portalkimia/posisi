@@ -1,6 +1,7 @@
 /**
  * TKA 2026 - Central Laptop Assignment & Room Layout Synchronization
  * Multi-Day (26–29 Okt) & Multi-Session Backend
+ * High-Concurrency Architecture for 11 Simultaneous Proctors
  * 
  * Target Sheets:
  * - Rekap_26_Okt
@@ -9,7 +10,7 @@
  * - Rekap_29_Okt
  * Columns: [NIS, NAMA, KELAS, RUANG KELAS, RUANG LAPTOP, SESI 1, SESI 2, SESI 3, KEBERADAAN DI RUANGAN, CHARGER, LAPTOP, KETERANGAN, LAST UPDATED]
  * 
- * - Data_Ruangan (Desk assignments per date & session)
+ * - Data_Ruangan (Desk assignments per date & session across all 11 rooms + Ruang Guru)
  * - Laptops_Inventory (Central inventory)
  */
 
@@ -45,6 +46,7 @@ const HEADERS_LAPTOPS = [
 /**
  * Handle HTTP GET Requests
  * Endpoints:
+ * - ?action=getSyncState&tanggal=2026-10-26&sesi=Sesi%201 (All 11 rooms assignments + Rekap)
  * - ?action=getRekapLaptop&tanggal=2026-10-26
  * - ?action=getAllRekap (all 4 days)
  * - ?action=getRoom&room=Ruang%201&tanggal=2026-10-26&sesi=Sesi%201
@@ -53,7 +55,7 @@ const HEADERS_LAPTOPS = [
  */
 function doGet(e) {
   try {
-    const action = (e && e.parameter && e.parameter.action) || "getRekapLaptop";
+    const action = (e && e.parameter && e.parameter.action) || "getSyncState";
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     ensureSetup(ss);
 
@@ -61,6 +63,31 @@ function doGet(e) {
 
     if (action === "ping") {
       result = { success: true, message: "PONG", timestamp: new Date().toISOString() };
+    } else if (action === "getSyncState") {
+      const tanggal = (e && e.parameter && e.parameter.tanggal) || "2026-10-26";
+      const sesi = (e && e.parameter && e.parameter.sesi) || "Sesi 1";
+
+      const sheetRooms = ss.getSheetByName(SHEET_ROOMS);
+      const roomsData = getSheetDataAsObjects(sheetRooms);
+      const sessionAssignments = roomsData.filter(function (row) {
+        const rowTgl = String(row.Tanggal || "").trim();
+        const matchTgl = !rowTgl || rowTgl === String(tanggal).trim() || rowTgl.indexOf(String(tanggal).trim()) !== -1;
+        const matchSesi = !row.Sesi || String(row.Sesi).trim().toLowerCase() === String(sesi).trim().toLowerCase();
+        return matchTgl && matchSesi;
+      });
+
+      const sheetName = DATES_CONFIG[tanggal] || "Rekap_26_Okt";
+      const sheetRekap = ss.getSheetByName(sheetName);
+      const rekapData = sheetRekap ? getSheetDataAsObjects(sheetRekap) : [];
+
+      result = {
+        success: true,
+        tanggal: tanggal,
+        sesi: sesi,
+        assignments: sessionAssignments,
+        rekap: rekapData,
+        timestamp: new Date().toISOString()
+      };
     } else if (action === "getRekapLaptop") {
       const tanggal = (e && e.parameter && e.parameter.tanggal) || "2026-10-26";
       const sheetName = DATES_CONFIG[tanggal] || "Rekap_26_Okt";
@@ -84,7 +111,8 @@ function doGet(e) {
       const data = getSheetDataAsObjects(sheet);
       const roomData = data.filter(function (row) {
         const matchRoom = String(row.Ruang).trim().toLowerCase() === String(room).trim().toLowerCase();
-        const matchTgl = !row.Tanggal || String(row.Tanggal).trim() === String(tanggal).trim();
+        const rowTgl = String(row.Tanggal || "").trim();
+        const matchTgl = !rowTgl || rowTgl === String(tanggal).trim() || rowTgl.indexOf(String(tanggal).trim()) !== -1;
         const matchSesi = !row.Sesi || String(row.Sesi).trim().toLowerCase() === String(sesi).trim().toLowerCase();
         return matchRoom && matchTgl && matchSesi;
       });
@@ -117,7 +145,8 @@ function doGet(e) {
 function doPost(e) {
   const lock = LockService.getScriptLock();
   try {
-    lock.waitLock(15000);
+    // 30 seconds wait for high concurrent access across 11 proctors
+    lock.waitLock(30000);
 
     let body = {};
     if (e && e.postData && e.postData.contents) {
@@ -144,12 +173,16 @@ function doPost(e) {
       response = { success: false, error: "Unknown POST action: " + action };
     }
 
+    // Flush pending changes to sheet before releasing lock!
+    SpreadsheetApp.flush();
+
     return ContentService.createTextOutput(JSON.stringify(response))
       .setMimeType(ContentService.MimeType.JSON);
   } catch (err) {
     return ContentService.createTextOutput(JSON.stringify({
       success: false,
-      error: "Lock or Execution Error: " + err.toString()
+      error: "Lock or Execution Error: " + err.toString(),
+      retryable: true
     })).setMimeType(ContentService.MimeType.JSON);
   } finally {
     try {
@@ -184,7 +217,7 @@ function handleUpdateRekapRow(ss, payload) {
     return { success: false, error: "Missing required identifier: NIS or Nama" };
   }
 
-  const values = sheet.getDataRange().getValues();
+  const values = sheet.getDataRange().getDisplayValues();
   let targetRow = -1;
 
   for (let i = 1; i < values.length; i++) {
@@ -219,8 +252,6 @@ function handleUpdateRekapRow(ss, payload) {
     targetRow = sheet.getLastRow();
   }
 
-  sheet.getRange(targetRow, 9).insertCheckboxes();
-
   return {
     success: true,
     action: targetRow > 0 ? "updated" : "inserted",
@@ -241,11 +272,13 @@ function handleBatchSyncDate(ss, tanggal, items) {
     handleUpdateRekapRow(ss, item);
     count++;
   }
+  SpreadsheetApp.flush();
   return { success: true, count: count };
 }
 
 /**
  * Upsert desk assignment into Data_Ruangan & cross-sync to date sheet Sesi column
+ * Fully handles assigning and unassigning without orphaned records.
  */
 function handleUpdateAssignment(ss, payload) {
   const sheetRooms = ss.getSheetByName(SHEET_ROOMS);
@@ -263,10 +296,13 @@ function handleUpdateAssignment(ss, payload) {
   const isReady = payload.isReady === true || payload.isReady === "true" || payload.isReady === 1;
   const hasCharger = payload.hasCharger === true || payload.hasCharger === "true" || payload.hasCharger === 1;
   const catatan = String(payload.catatan || payload.keterangan || "").trim();
+  const isUnassign = payload.isUnassign === true || !idLaptop;
 
-  // 1. Update Data_Ruangan
-  const values = sheetRooms.getDataRange().getValues();
+  // 1. Find existing row in Data_Ruangan
+  const values = sheetRooms.getDataRange().getDisplayValues();
   let targetRow = -1;
+  let oldIdLaptop = "";
+  let oldPemilik = "";
 
   for (let i = 1; i < values.length; i++) {
     const rTgl = String(values[i][0]).trim();
@@ -274,8 +310,11 @@ function handleUpdateAssignment(ss, payload) {
     const rRuang = String(values[i][2]).trim();
     const rDesk = Number(values[i][3]);
 
-    if (rTgl === tanggal && rSesi.toLowerCase() === sesi.toLowerCase() && rRuang.toLowerCase() === room.toLowerCase() && rDesk === deskNo) {
+    const matchTgl = rTgl === tanggal || rTgl.indexOf(tanggal) !== -1;
+    if (matchTgl && rSesi.toLowerCase() === sesi.toLowerCase() && rRuang.toLowerCase() === room.toLowerCase() && rDesk === deskNo) {
       targetRow = i + 1;
+      oldIdLaptop = String(values[i][5] || "").trim();
+      oldPemilik = String(values[i][7] || "").trim();
       break;
     }
   }
@@ -286,12 +325,12 @@ function handleUpdateAssignment(ss, payload) {
     room,
     deskNo,
     namaPeserta,
-    idLaptop,
-    labelLaptop,
-    pemilikLaptop,
-    isReady ? "TRUE" : "FALSE",
-    hasCharger ? "TRUE" : "FALSE",
-    catatan,
+    isUnassign ? "" : idLaptop,
+    isUnassign ? "" : labelLaptop,
+    isUnassign ? "" : pemilikLaptop,
+    isUnassign ? "FALSE" : (isReady ? "TRUE" : "FALSE"),
+    isUnassign ? "FALSE" : (hasCharger ? "TRUE" : "FALSE"),
+    isUnassign ? "" : catatan,
     now
   ];
 
@@ -302,15 +341,16 @@ function handleUpdateAssignment(ss, payload) {
   }
 
   // 2. Cross-sync to the date's Rekap sheet under the specific Sesi column
-  if (pemilikLaptop) {
+  const targetPemilik = pemilikLaptop || payload.unassignPemilik || oldPemilik;
+  if (targetPemilik) {
     const rCode = room.replace("Ruang ", "R");
-    const deskText = deskNo ? "Meja " + deskNo : "Cadangan";
-    
+    const deskText = isUnassign ? "-" : (deskNo ? "Meja " + deskNo : "Cadangan");
+
     const rekapUpdate = {
       tanggal: tanggal,
-      nama: pemilikLaptop,
-      ruangLaptop: rCode,
-      keberadaan: true,
+      nama: targetPemilik,
+      ruangLaptop: isUnassign ? "" : rCode,
+      keberadaan: !isUnassign,
       charger: hasCharger ? "ADA" : "TIDAK ADA",
       laptopStatus: isReady ? "AMAN" : "TIDAK AMAN",
       keterangan: catatan
@@ -324,15 +364,16 @@ function handleUpdateAssignment(ss, payload) {
   }
 
   // 3. Sync to Laptops_Inventory
-  if (idLaptop) {
+  const targetIdLaptop = idLaptop || payload.unassignIdLaptop || oldIdLaptop;
+  if (targetIdLaptop) {
     syncLaptopInventory(sheetLaptops, {
-      idLaptop: idLaptop,
+      idLaptop: targetIdLaptop,
       labelLaptop: labelLaptop,
-      pemilikLaptop: pemilikLaptop,
+      pemilikLaptop: targetPemilik,
       isReady: isReady,
       hasCharger: hasCharger,
-      assignedRoom: room,
-      assignedDesk: deskNo,
+      assignedRoom: isUnassign ? "" : room,
+      assignedDesk: isUnassign ? "" : deskNo,
       catatan: catatan,
       lastUpdated: now
     });
@@ -340,17 +381,17 @@ function handleUpdateAssignment(ss, payload) {
 
   return {
     success: true,
-    action: targetRow > 0 ? "updated" : "inserted",
+    action: isUnassign ? "unassigned" : (targetRow > 0 ? "updated" : "inserted"),
     tanggal: tanggal,
     sesi: sesi,
     room: room,
     deskNo: deskNo,
-    idLaptop: idLaptop
+    idLaptop: isUnassign ? "" : idLaptop
   };
 }
 
 function syncLaptopInventory(sheet, laptop) {
-  const values = sheet.getDataRange().getValues();
+  const values = sheet.getDataRange().getDisplayValues();
   let targetRow = -1;
 
   for (let i = 1; i < values.length; i++) {
@@ -367,7 +408,7 @@ function syncLaptopInventory(sheet, laptop) {
     laptop.isReady ? "TRUE" : "FALSE",
     laptop.hasCharger ? "TRUE" : "FALSE",
     laptop.assignedRoom || "",
-    laptop.assignedDesk || "",
+    laptop.assignedDesk !== undefined && laptop.assignedDesk !== null ? laptop.assignedDesk : "",
     laptop.catatan || "",
     laptop.lastUpdated || new Date().toISOString()
   ];
@@ -382,6 +423,7 @@ function syncLaptopInventory(sheet, laptop) {
 function handleUpsertLaptop(ss, payload) {
   const sheetLaptops = ss.getSheetByName(SHEET_LAPTOPS);
   syncLaptopInventory(sheetLaptops, payload);
+  SpreadsheetApp.flush();
   return { success: true, idLaptop: payload.idLaptop };
 }
 
@@ -414,6 +456,7 @@ function ensureSetup(ss) {
       .setFontWeight("bold")
       .setBackground("#e2e8f0");
     sRooms.setFrozenRows(1);
+    sRooms.getRange(2, 1, 1000, 1).setNumberFormat("@");
   }
 
   // 3. Laptops_Inventory
@@ -432,7 +475,7 @@ function ensureSetup(ss) {
  * Set dropdowns & conditional formatting for Rekap sheets
  */
 function setupRekapValidations(sheet) {
-  const maxRows = 400;
+  const maxRows = 500;
 
   // Dropdown for CHARGER (Col 10: ADA, TIDAK ADA)
   const chargerRule = SpreadsheetApp.newDataValidation()
@@ -481,14 +524,15 @@ function setupRekapValidations(sheet) {
 
 function getSheetDataAsObjects(sheet) {
   if (!sheet) return [];
-  const values = sheet.getDataRange().getValues();
-  if (values.length <= 1) return [];
+  const displayValues = sheet.getDataRange().getDisplayValues();
+  if (displayValues.length <= 1) return [];
 
-  const headers = values[0];
+  const headers = displayValues[0];
   const list = [];
 
-  for (let i = 1; i < values.length; i++) {
-    const row = values[i];
+  for (let i = 1; i < displayValues.length; i++) {
+    const row = displayValues[i];
+    if (!row.some(function (cell) { return cell !== ""; })) continue;
     const obj = {};
     for (let j = 0; j < headers.length; j++) {
       obj[headers[j]] = row[j];
