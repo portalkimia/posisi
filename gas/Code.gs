@@ -123,6 +123,8 @@ function doGet(e) {
       result = { success: true, data: data, count: data.length };
     } else if (action === "cleanDuplicates") {
       result = cleanDataRuanganDuplicates(ss);
+    } else if (action === "syncDay1ToAllDates") {
+      result = syncDay1ToAllDates(ss);
     } else if (action === "listSheets") {
       result = {
         success: true,
@@ -958,4 +960,62 @@ function cleanDataRuanganDuplicates(ss) {
 
   SpreadsheetApp.flush();
   return { success: true, removedCount: rowsToDelete.length };
+}
+
+/**
+ * Synchronize Day 1 (Rekap_26_Okt) baseline assignments & statuses to Day 2, 3, 4.
+ * Guarantees that every date starts with identical verified desk positions.
+ */
+function syncDay1ToAllDates(ss) {
+  const sDay1 = ss.getSheetByName("Rekap_26_Okt");
+  if (!sDay1) return { success: false, error: "Rekap_26_Okt not found" };
+
+  const day1Data = getSheetDataAsObjects(sDay1);
+  const map = {};
+  day1Data.forEach(function (r) {
+    const name = String(r.NAMA || "").trim().toLowerCase();
+    if (name) {
+      map[name] = {
+        s1: r["SESI 1"] || "",
+        s2: r["SESI 2"] || "",
+        s3: r["SESI 3"] || "",
+        ruangLaptop: r["RUANG LAPTOP"] || "",
+        keberadaan: String(r["KEBERADAAN DI RUANGAN"] || "").toUpperCase() === "TRUE",
+        charger: String(r.CHARGER || "ADA").toUpperCase(),
+        laptop: String(r.LAPTOP || "AMAN").toUpperCase(),
+        ket: String(r.KETERANGAN || "").trim()
+      };
+    }
+  });
+
+  const results = {};
+  ["Rekap_27_Okt", "Rekap_28_Okt", "Rekap_29_Okt"].forEach(function (sheetName) {
+    const s = ss.getSheetByName(sheetName);
+    if (!s) return;
+    const range = s.getDataRange();
+    const values = range.getValues();
+    let updated = 0;
+
+    for (let i = 1; i < values.length; i++) {
+      const name = String(values[i][1] || "").trim().toLowerCase();
+      if (map[name]) {
+        const d1 = map[name];
+        values[i][4] = d1.ruangLaptop;
+        values[i][5] = d1.s1;
+        values[i][6] = d1.s2;
+        values[i][7] = d1.s3;
+        values[i][8] = d1.keberadaan ? true : false;
+        values[i][9] = d1.charger;
+        values[i][10] = d1.laptop;
+        values[i][11] = d1.ket;
+        updated++;
+      }
+    }
+
+    range.setValues(values);
+    results[sheetName] = updated;
+  });
+
+  SpreadsheetApp.flush();
+  return { success: true, results: results };
 }

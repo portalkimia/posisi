@@ -79,7 +79,7 @@
 
   // --- LOCAL STATE LOADING & AUTO SEEDING ---
   const CACHE_VERSION_KEY = "tka_cache_version";
-  const CURRENT_CACHE_VERSION = "20261025_008";
+  const CURRENT_CACHE_VERSION = "20261025_009";
 
   function loadLocalState() {
     const savedVersion = localStorage.getItem(CACHE_VERSION_KEY);
@@ -368,13 +368,29 @@ function getRoomBackupsStore(date, session, room) {
 
     for (let d = 1; d <= totalDesks; d++) {
       if (currentRoomMap[d] === undefined) {
-        const student = dateList.find((r) => {
+        let student = dateList.find((r) => {
           const rl = String(r.ruangLaptop || "").trim().toUpperCase();
           const matchRoom = rl === rCode.toUpperCase() || rl === room.toUpperCase();
           const deskMatch = String(r[sesKey] || "").trim().toLowerCase() === `meja ${d}`;
           const isPresent = r.keberadaan === true || String(r.keberadaan || "").trim().toUpperCase() === "TRUE";
           return matchRoom && deskMatch && isPresent;
         });
+
+        // Fallback to previous day if current day rekap has not yet assigned this desk
+        if (!student) {
+          const dateIdx = TKA_DATES.findIndex((t) => t.id === date);
+          if (dateIdx > 0) {
+            const prevDate = TKA_DATES[dateIdx - 1].id;
+            const prevDateList = rekapLaptopsByDate[prevDate] || [];
+            student = prevDateList.find((r) => {
+              const rl = String(r.ruangLaptop || "").trim().toUpperCase();
+              const matchRoom = rl === rCode.toUpperCase() || rl === room.toUpperCase();
+              const deskMatch = String(r[sesKey] || r.sesi1 || "").trim().toLowerCase() === `meja ${d}`;
+              const isPresent = r.keberadaan === true || String(r.keberadaan || "").trim().toUpperCase() === "TRUE";
+              return matchRoom && deskMatch && isPresent;
+            });
+          }
+        }
 
         if (student) {
           currentRoomMap[d] = {
@@ -2249,28 +2265,51 @@ function getRoomBackupsStore(date, session, room) {
     }
 
     const backupLaptop = backups[0];
+    const problemNote = `Bermasalah di Meja ${deskNo} (${activeSession}): ${curAssignment.catatan || "Perlu perbaikan / kendala teknis"}`;
+
+    // 1. Update broken laptop in rekap and sync to GAS
+    const dateList = rekapLaptopsByDate[activeDate] || [];
+    const brokenStudent = dateList.find((r) => r.nama === curAssignment.pemilikLaptop);
+    if (brokenStudent) {
+      brokenStudent.laptop = "TIDAK AMAN";
+      brokenStudent.keterangan = problemNote;
+      clearRekapDeskPosition(activeDate, brokenStudent.nama, activeSession);
+      syncRekapRowToGAS(activeDate, brokenStudent);
+    }
+
+    // 2. Update broken laptop in laptopPool
+    const poolLap = laptopPool.find((l) => l.idLaptop === curAssignment.idLaptop);
+    if (poolLap) {
+      poolLap.isReady = false;
+      poolLap.catatan = problemNote;
+      poolLap.assignedRoom = null;
+      poolLap.assignedDesk = null;
+      saveLaptopPool();
+    }
+
+    // 3. Update roomBackups store
     const currentStore = getRoomBackupsStore(activeDate, activeSession, roomName);
     const storeIdx = currentStore.findIndex((b) => b.idLaptop && b.idLaptop.toLowerCase() === backupLaptop.idLaptop.toLowerCase());
     if (storeIdx !== -1) {
       currentStore.splice(storeIdx, 1);
     }
-
     currentStore.push({
       idLaptop: curAssignment.idLaptop,
       labelLaptop: curAssignment.labelLaptop,
       pemilikLaptop: curAssignment.pemilikLaptop,
       isReady: false,
       hasCharger: curAssignment.hasCharger,
-      catatan: `Bermasalah dari Meja ${deskNo} (Sesi: ${activeSession}): ${curAssignment.catatan || "Perlu perbaikan"}`,
+      catatan: problemNote,
       isBackup: true,
       room: roomName
     });
     saveRoomBackups();
 
+    // 4. Assign replacement laptop to desk and sync to GAS
     assignLaptopToDesk(roomName, deskNo, backupLaptop.idLaptop, {
       isReady: backupLaptop.isReady,
       hasCharger: backupLaptop.hasCharger,
-      catatan: `Unit Cadangan (${backupLaptop.idLaptop})`
+      catatan: `Unit Pengganti (${backupLaptop.idLaptop})`
     });
 
     closeDeskInspectionModal();
@@ -2837,6 +2876,9 @@ function getRoomBackupsStore(date, session, room) {
       btn.addEventListener("click", () => {
         rekapActiveDate = btn.dataset.date;
         renderRekapLaptopTable();
+        if (gasUrl && !isSyncing && offlineQueue.length === 0) {
+          pollRoomStateFromGAS();
+        }
       });
     });
 
