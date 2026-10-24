@@ -65,14 +65,14 @@ function doGet(e) {
       result = { success: true, message: "PONG", timestamp: new Date().toISOString() };
     } else if (action === "getSyncState") {
       const tanggal = (e && e.parameter && e.parameter.tanggal) || "2026-10-26";
-      const sesi = (e && e.parameter && e.parameter.sesi) || "Sesi 1";
+      const sesi = (e && e.parameter && e.parameter.sesi) || "all";
 
       const sheetRooms = ss.getSheetByName(SHEET_ROOMS);
       const roomsData = getSheetDataAsObjects(sheetRooms);
       const sessionAssignments = roomsData.filter(function (row) {
         const rowTgl = String(row.Tanggal || "").trim();
         const matchTgl = !rowTgl || rowTgl === String(tanggal).trim() || rowTgl.indexOf(String(tanggal).trim()) !== -1;
-        const matchSesi = !row.Sesi || String(row.Sesi).trim().toLowerCase() === String(sesi).trim().toLowerCase();
+        const matchSesi = !sesi || sesi === "all" || !row.Sesi || String(row.Sesi).trim().toLowerCase() === String(sesi).trim().toLowerCase();
         return matchTgl && matchSesi;
       });
 
@@ -121,6 +121,8 @@ function doGet(e) {
       const sheet = ss.getSheetByName(SHEET_LAPTOPS);
       const data = getSheetDataAsObjects(sheet);
       result = { success: true, data: data, count: data.length };
+    } else if (action === "cleanDuplicates") {
+      result = cleanDataRuanganDuplicates(ss);
     } else if (action === "listSheets") {
       result = {
         success: true,
@@ -352,9 +354,10 @@ function handleUpdateAssignment(ss, payload) {
   const catatan = String(payload.catatan || payload.keterangan || "").trim();
   const isUnassign = payload.isUnassign === true || !idLaptop;
 
-  // 1. Find existing row in Data_Ruangan
+  // 1. Find existing row(s) in Data_Ruangan (with automatic duplicate detection)
   const values = sheetRooms.getDataRange().getDisplayValues();
   let targetRow = -1;
+  const duplicateRows = [];
   let oldIdLaptop = "";
   let oldPemilik = "";
 
@@ -366,10 +369,13 @@ function handleUpdateAssignment(ss, payload) {
 
     const matchTgl = rTgl === tanggal || rTgl.indexOf(tanggal) !== -1;
     if (matchTgl && rSesi.toLowerCase() === sesi.toLowerCase() && rRuang.toLowerCase() === room.toLowerCase() && rDesk === deskNo) {
-      targetRow = i + 1;
-      oldIdLaptop = String(values[i][5] || "").trim();
-      oldPemilik = String(values[i][7] || "").trim();
-      break;
+      if (targetRow === -1) {
+        targetRow = i + 1;
+        oldIdLaptop = String(values[i][5] || "").trim();
+        oldPemilik = String(values[i][7] || "").trim();
+      } else {
+        duplicateRows.push(i + 1);
+      }
     }
   }
 
@@ -392,6 +398,14 @@ function handleUpdateAssignment(ss, payload) {
     sheetRooms.getRange(targetRow, 1, 1, HEADERS_ROOMS.length).setValues([rowData]);
   } else {
     sheetRooms.appendRow(rowData);
+  }
+
+  // Delete any duplicate rows from bottom to top
+  if (duplicateRows.length > 0) {
+    for (let d = duplicateRows.length - 1; d >= 0; d--) {
+      sheetRooms.deleteRow(duplicateRows[d]);
+    }
+    SpreadsheetApp.flush();
   }
 
   // 2. Cross-sync to the date's Rekap sheet under the specific Sesi column
@@ -897,4 +911,51 @@ function getSheetDataAsObjects(sheet) {
 function setupSheets() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   ensureSetup(ss);
+}
+
+/**
+ * Automatically find and remove duplicate desk assignments in Data_Ruangan.
+ * Keeps the latest row based on LastUpdated timestamp.
+ */
+function cleanDataRuanganDuplicates(ss) {
+  const sRooms = ss.getSheetByName(SHEET_ROOMS);
+  if (!sRooms) return { success: false, error: "Data_Ruangan not found" };
+
+  const values = sRooms.getDataRange().getDisplayValues();
+  if (values.length <= 1) return { success: true, removedCount: 0 };
+
+  const seen = {};
+  const rowsToDelete = [];
+
+  for (let i = 1; i < values.length; i++) {
+    const rowNum = i + 1;
+    const tgl = String(values[i][0] || "").trim();
+    const sesi = String(values[i][1] || "").trim();
+    const ruang = String(values[i][2] || "").trim();
+    const desk = String(values[i][3] || "").trim();
+    const timeStr = String(values[i][11] || "").trim();
+    const timeMs = new Date(timeStr || 0).getTime();
+
+    if (!tgl || !sesi || !ruang || !desk) continue;
+    const key = tgl.toLowerCase() + "|" + sesi.toLowerCase() + "|" + ruang.toLowerCase() + "|" + desk;
+
+    if (!seen[key]) {
+      seen[key] = { rowNum: rowNum, timeMs: timeMs };
+    } else {
+      if (timeMs > seen[key].timeMs) {
+        rowsToDelete.push(seen[key].rowNum);
+        seen[key] = { rowNum: rowNum, timeMs: timeMs };
+      } else {
+        rowsToDelete.push(rowNum);
+      }
+    }
+  }
+
+  rowsToDelete.sort(function (a, b) { return b - a; });
+  rowsToDelete.forEach(function (rNum) {
+    sRooms.deleteRow(rNum);
+  });
+
+  SpreadsheetApp.flush();
+  return { success: true, removedCount: rowsToDelete.length };
 }

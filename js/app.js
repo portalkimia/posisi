@@ -79,7 +79,7 @@
 
   // --- LOCAL STATE LOADING & AUTO SEEDING ---
   const CACHE_VERSION_KEY = "tka_cache_version";
-  const CURRENT_CACHE_VERSION = "20261025_007";
+  const CURRENT_CACHE_VERSION = "20261025_008";
 
   function loadLocalState() {
     const savedVersion = localStorage.getItem(CACHE_VERSION_KEY);
@@ -359,6 +359,37 @@ function getRoomBackupsStore(date, session, room) {
       });
     }
 
+    // Reconcile remaining unset desks from verified rekap table (cross-device fallback)
+    const rCode = room === "Ruang Guru" ? "Ruang Guru" : room.replace("Ruang ", "R");
+    const sesKey = session === "Sesi 1" ? "sesi1" : (session === "Sesi 2" ? "sesi2" : "sesi3");
+    const dateList = rekapLaptopsByDate[date] || [];
+    const roomConf = ROOMS_DATA[room];
+    const totalDesks = roomConf ? roomConf.totalDesks : 0;
+
+    for (let d = 1; d <= totalDesks; d++) {
+      if (currentRoomMap[d] === undefined) {
+        const student = dateList.find((r) => {
+          const rl = String(r.ruangLaptop || "").trim().toUpperCase();
+          const matchRoom = rl === rCode.toUpperCase() || rl === room.toUpperCase();
+          const deskMatch = String(r[sesKey] || "").trim().toLowerCase() === `meja ${d}`;
+          const isPresent = r.keberadaan === true || String(r.keberadaan || "").trim().toUpperCase() === "TRUE";
+          return matchRoom && deskMatch && isPresent;
+        });
+
+        if (student) {
+          currentRoomMap[d] = {
+            idLaptop: `LP-${student.nis || student.nama.replace(/\s+/g, "").substring(0, 8)}`,
+            labelLaptop: `Laptop Mandiri (${student.kelas || "-"})`,
+            pemilikLaptop: student.nama,
+            isReady: student.laptop !== "TIDAK AMAN",
+            hasCharger: student.charger !== "TIDAK ADA",
+            catatan: student.keterangan || "",
+            lastUpdated: new Date().toISOString()
+          };
+        }
+      }
+    }
+
     currentRoomMap._initialized = true;
     saveAssignments();
     return currentRoomMap;
@@ -479,6 +510,7 @@ function getRoomBackupsStore(date, session, room) {
           rekapActiveDate = activeDate;
           renderRekapLaptopTable();
         }
+        pollRoomStateFromGAS();
       });
       container.appendChild(btn);
     });
@@ -1854,6 +1886,39 @@ function getRoomBackupsStore(date, session, room) {
     }
     if (!laptop) return;
 
+    // STEP A: If this laptop was already assigned to ANOTHER desk in this session (any room), unassign old desk
+    if (assignments[activeDate] && assignments[activeDate][activeSession]) {
+      Object.keys(assignments[activeDate][activeSession]).forEach((rName) => {
+        const rMap = assignments[activeDate][activeSession][rName];
+        if (rMap) {
+          Object.keys(rMap).forEach((dStr) => {
+            const dNum = Number(dStr);
+            if (dNum && (rName !== roomName || dNum !== deskNo)) {
+              const curA = rMap[dNum];
+              if (curA && curA.idLaptop === idLaptop && !curA.unassigned) {
+                rMap[dNum] = { unassigned: true, lastUpdated: new Date().toISOString() };
+                syncAssignmentToGAS(activeDate, activeSession, rName, dNum, true, curA.pemilikLaptop, idLaptop);
+              }
+            }
+          });
+        }
+      });
+    }
+
+    // STEP B: If the destination desk already has a DIFFERENT laptop, free that old laptop
+    const destMap = assignments[activeDate] && assignments[activeDate][activeSession] && assignments[activeDate][activeSession][roomName];
+    const prevDeskOccupant = destMap && destMap[deskNo];
+    if (prevDeskOccupant && prevDeskOccupant.idLaptop && prevDeskOccupant.idLaptop !== idLaptop && !prevDeskOccupant.unassigned) {
+      const oldLap = laptopPool.find((l) => l.idLaptop === prevDeskOccupant.idLaptop);
+      if (oldLap) {
+        oldLap.assignedRoom = null;
+        oldLap.assignedDesk = null;
+      }
+      if (prevDeskOccupant.pemilikLaptop) {
+        clearRekapDeskPosition(activeDate, prevDeskOccupant.pemilikLaptop, activeSession);
+      }
+    }
+
     const oldRoom = (student && student.ruangLaptop) || laptop.ruangLaptop || "";
     const hasMovedRoom = oldRoom && oldRoom.toUpperCase() !== targetRCode.toUpperCase();
 
@@ -2404,81 +2469,132 @@ function getRoomBackupsStore(date, session, room) {
     // Jangan lakukan polling jika sedang ada proses pengiriman antrian lokal
     if (!gasUrl || isSyncing || offlineQueue.length > 0) return;
     try {
-      const url = `${gasUrl}?action=getSyncState&tanggal=${encodeURIComponent(activeDate)}&sesi=${encodeURIComponent(activeSession)}`;
+      const url = `${gasUrl}?action=getSyncState&tanggal=${encodeURIComponent(activeDate)}&sesi=all`;
       const res = await fetch(url);
       const json = await res.json();
 
       if (json && json.success) {
         let activeRoomChanged = false;
 
-        // 1. Process room assignments across all 11 rooms
+        // 1. Process room assignments across all sessions & 11 rooms
         if (Array.isArray(json.assignments)) {
           if (!assignments[activeDate]) assignments[activeDate] = {};
-          if (!assignments[activeDate][activeSession]) assignments[activeDate][activeSession] = {};
 
-          const remoteByRoom = {};
+          const remoteBySessionAndRoom = {};
           json.assignments.forEach((row) => {
             const r = String(row.Ruang || "").trim();
             const desk = Number(row.NoMeja);
-            if (!r || !desk) return;
-            if (!remoteByRoom[r]) remoteByRoom[r] = {};
+            const rSesi = String(row.Sesi || activeSession).trim();
+            if (!r || !desk || !rSesi) return;
+
+            if (!remoteBySessionAndRoom[rSesi]) remoteBySessionAndRoom[rSesi] = {};
+            if (!remoteBySessionAndRoom[rSesi][r]) remoteBySessionAndRoom[rSesi][r] = {};
 
             const idLap = String(row.IdLaptop || "").trim();
+            const rowTimeMs = new Date(row.LastUpdated || 0).getTime();
+            const existing = remoteBySessionAndRoom[rSesi][r][desk];
+
+            // If duplicate found in payload, keep newer row
+            if (existing && existing._timeMs > rowTimeMs) {
+              return;
+            }
+
             if (idLap) {
-              remoteByRoom[r][desk] = {
+              remoteBySessionAndRoom[rSesi][r][desk] = {
                 idLaptop: idLap,
                 labelLaptop: row.LabelLaptop || "",
                 pemilikLaptop: row.PemilikLaptop || "",
                 isReady: String(row.IsReady).toUpperCase() === "TRUE",
                 hasCharger: String(row.HasCharger).toUpperCase() === "TRUE",
                 catatan: row.Catatan || "",
-                lastUpdated: row.LastUpdated || new Date().toISOString()
+                lastUpdated: row.LastUpdated || new Date().toISOString(),
+                _timeMs: rowTimeMs
               };
             } else {
-              remoteByRoom[r][desk] = { unassigned: true, lastUpdated: row.LastUpdated || new Date().toISOString() };
+              remoteBySessionAndRoom[rSesi][r][desk] = {
+                unassigned: true,
+                lastUpdated: row.LastUpdated || new Date().toISOString(),
+                _timeMs: rowTimeMs
+              };
             }
           });
 
-          // Sync into active room
-          const activeRoomRemote = remoteByRoom[activeRoom] || {};
-          const localActive = getEffectiveRoomAssignments(activeDate, activeSession, activeRoom);
+          // Overlay remote assignments for all sessions into memory
+          Object.keys(remoteBySessionAndRoom).forEach((s) => {
+            if (!assignments[activeDate][s]) assignments[activeDate][s] = {};
+            Object.keys(remoteBySessionAndRoom[s]).forEach((r) => {
+              if (!assignments[activeDate][s][r]) assignments[activeDate][s][r] = {};
 
-          Object.keys(activeRoomRemote).forEach((dStr) => {
-            const d = Number(dStr);
-            const rData = activeRoomRemote[d];
-            if (rData.unassigned) {
-              if (localActive[d] && !localActive[d].unassigned) {
-                localActive[d] = { unassigned: true };
-                activeRoomChanged = true;
-              }
-            } else {
-              const cur = localActive[d];
-              if (!cur || cur.unassigned || cur.idLaptop !== rData.idLaptop || cur.isReady !== rData.isReady || cur.hasCharger !== rData.hasCharger || cur.catatan !== rData.catatan) {
-                localActive[d] = rData;
-                activeRoomChanged = true;
-              }
-            }
-          });
+              if (s === activeSession && r === activeRoom) {
+                // Handle active room carefully with timestamp protection
+                const localActive = getEffectiveRoomAssignments(activeDate, activeSession, activeRoom);
+                const activeRoomRemote = remoteBySessionAndRoom[s][r];
 
-          // Overlay remote data into other rooms
-          Object.keys(remoteByRoom).forEach((r) => {
-            if (!assignments[activeDate][activeSession][r]) {
-              assignments[activeDate][activeSession][r] = {};
-            }
-            Object.assign(assignments[activeDate][activeSession][r], remoteByRoom[r]);
+                Object.keys(activeRoomRemote).forEach((dStr) => {
+                  const d = Number(dStr);
+                  const rData = activeRoomRemote[d];
+                  const cur = localActive[d];
+
+                  const curTime = cur && cur.lastUpdated ? new Date(cur.lastUpdated).getTime() : 0;
+                  const remoteTime = rData._timeMs || 0;
+
+                  // Protect against race condition: don't overwrite if local edit is very recent and newer
+                  if (cur && curTime > remoteTime && (Date.now() - curTime < 15000)) {
+                    return;
+                  }
+
+                  if (rData.unassigned) {
+                    if (localActive[d] && !localActive[d].unassigned) {
+                      localActive[d] = { unassigned: true, lastUpdated: rData.lastUpdated };
+                      activeRoomChanged = true;
+                    }
+                  } else {
+                    if (!cur || cur.unassigned || cur.idLaptop !== rData.idLaptop || cur.isReady !== rData.isReady || cur.hasCharger !== rData.hasCharger || cur.catatan !== rData.catatan) {
+                      localActive[d] = {
+                        idLaptop: rData.idLaptop,
+                        labelLaptop: rData.labelLaptop,
+                        pemilikLaptop: rData.pemilikLaptop,
+                        isReady: rData.isReady,
+                        hasCharger: rData.hasCharger,
+                        catatan: rData.catatan,
+                        lastUpdated: rData.lastUpdated
+                      };
+                      activeRoomChanged = true;
+                    }
+                  }
+                });
+              } else {
+                // Non-active session/room: overlay cleanly
+                Object.keys(remoteBySessionAndRoom[s][r]).forEach((dStr) => {
+                  const d = Number(dStr);
+                  const rData = remoteBySessionAndRoom[s][r][d];
+                  assignments[activeDate][s][r][d] = rData.unassigned ? { unassigned: true, lastUpdated: rData.lastUpdated } : {
+                    idLaptop: rData.idLaptop,
+                    labelLaptop: rData.labelLaptop,
+                    pemilikLaptop: rData.pemilikLaptop,
+                    isReady: rData.isReady,
+                    hasCharger: rData.hasCharger,
+                    catatan: rData.catatan,
+                    lastUpdated: rData.lastUpdated
+                  };
+                });
+              }
+            });
           });
 
           // 2. Global Laptop Pool Reconciliation
           const assignedLaptopsMap = {};
-          Object.keys(assignments[activeDate][activeSession]).forEach((r) => {
-            const desks = assignments[activeDate][activeSession][r] || {};
-            Object.keys(desks).forEach((d) => {
-              const a = desks[d];
-              if (a && a.idLaptop && !a.unassigned) {
-                assignedLaptopsMap[a.idLaptop] = { room: r, desk: Number(d) };
-              }
+          if (assignments[activeDate] && assignments[activeDate][activeSession]) {
+            Object.keys(assignments[activeDate][activeSession]).forEach((r) => {
+              const desks = assignments[activeDate][activeSession][r] || {};
+              Object.keys(desks).forEach((d) => {
+                const a = desks[d];
+                if (a && a.idLaptop && !a.unassigned) {
+                  assignedLaptopsMap[a.idLaptop] = { room: r, desk: Number(d) };
+                }
+              });
             });
-          });
+          }
 
           let poolChanged = false;
           laptopPool.forEach((l) => {
@@ -2698,6 +2814,7 @@ function getRoomBackupsStore(date, session, room) {
     document.getElementById("select-room").addEventListener("change", (e) => {
       activeRoom = e.target.value;
       renderActiveRoom();
+      pollRoomStateFromGAS();
     });
 
     // Session Selector Pills
@@ -2706,6 +2823,7 @@ function getRoomBackupsStore(date, session, room) {
         activeSession = btn.dataset.session;
         updateSessionPills();
         renderActiveRoom();
+        pollRoomStateFromGAS();
       });
     });
 
