@@ -1,20 +1,23 @@
 /**
- * TKA 2026 - Central Laptop Assignment & Student Rekap Controller
- * Optimistic UI, HTML5 Drag-and-Drop, Real-time GAS Sync & Offline Fallback
+ * TKA 2026 - Central Laptop Assignment & Multi-Day Multi-Session Controller
+ * Features: 4 Days (26-29 Okt), Auto-Copy Inheritance, Room Backups & Ruang Guru
  */
 
 (function () {
   'use strict';
 
   // --- STORAGE KEYS ---
-  const STORAGE_KEY_ASSIGNMENTS = "TKA_ASSIGNMENTS_2026";
+  const STORAGE_KEY_ASSIGNMENTS = "TKA_ASSIGNMENTS_MULTI_2026";
+  const STORAGE_KEY_BACKUPS = "TKA_ROOM_BACKUPS_2026";
+  const STORAGE_KEY_REKAP_BY_DATE = "TKA_REKAP_BY_DATE_2026";
   const STORAGE_KEY_POOL = "TKA_LAPTOP_POOL_2026";
-  const STORAGE_KEY_REKAP = "TKA_REKAP_LAPTOPS_2026";
   const STORAGE_KEY_GAS_URL = "TKA_GAS_URL_2026";
   const STORAGE_KEY_ACTIVE_ROOM = "TKA_ACTIVE_ROOM_2026";
+  const STORAGE_KEY_ACTIVE_DATE = "TKA_ACTIVE_DATE_2026";
   const STORAGE_KEY_QUEUE = "TKA_OFFLINE_QUEUE_2026";
 
   // --- STATE ---
+  let activeDate = localStorage.getItem(STORAGE_KEY_ACTIVE_DATE) || "2026-10-26";
   let activeRoom = localStorage.getItem(STORAGE_KEY_ACTIVE_ROOM) || "Ruang 1";
   let activeSession = "Sesi 1";
   let gasUrl = localStorage.getItem(STORAGE_KEY_GAS_URL) || "";
@@ -24,32 +27,37 @@
   let pollInterval = null;
   let currentTab = "denah";
 
-  // Rekap Table Filters
+  // Rekap Table State
+  let rekapActiveDate = "2026-10-26";
   let rekapSearch = "";
   let rekapFilterRuangLaptop = "ALL";
   let rekapFilterRuangKelas = "ALL";
   let rekapOnlyCross = false;
   let rekapOnlyIssues = false;
 
-  // Active desk for quick inspection modal
+  // Selected desk for inspection modal
   let selectedDeskForModal = null;
 
-  // In-memory assignment map: assignments[roomName][deskNo] = assignmentObject
+  // Multi-dimensional assignment map: assignments[date][session][room][deskNo]
   let assignments = {};
 
-  // In-memory laptop inventory pool
+  // Room Backups: roomBackups[date][session][room] = array of backup laptops
+  let roomBackups = {};
+
+  // Rekap Laptops per date: rekapLaptopsByDate[date] = array of student records
+  let rekapLaptopsByDate = {};
+
+  // Global pool of unassigned / registered laptops
   let laptopPool = [];
 
-  // In-memory student laptop rekap records (matching spreadsheet)
-  let rekapLaptops = [];
-
-  // Offline retry queue
+  // Offline queue
   let offlineQueue = [];
 
   // --- INITIALIZATION ---
   window.addEventListener("DOMContentLoaded", () => {
     loadLocalState();
     setupEventListeners();
+    renderDatePills();
     renderRoomSelector();
     renderActiveRoom();
     renderLaptopPool();
@@ -59,9 +67,9 @@
     refreshIcons();
   });
 
-  // --- STATE STORAGE & SEEDING ---
+  // --- LOCAL STATE LOADING & AUTO SEEDING ---
   function loadLocalState() {
-    // 1. Load Assignments
+    // 1. Load Multi-Day Assignments
     try {
       const stored = localStorage.getItem(STORAGE_KEY_ASSIGNMENTS);
       assignments = stored ? JSON.parse(stored) : {};
@@ -69,35 +77,31 @@
       assignments = {};
     }
 
-    Object.keys(ROOMS_DATA).forEach((roomName) => {
-      if (!assignments[roomName]) {
-        assignments[roomName] = {};
+    // 2. Load Room Backups
+    try {
+      const storedBackups = localStorage.getItem(STORAGE_KEY_BACKUPS);
+      roomBackups = storedBackups ? JSON.parse(storedBackups) : {};
+    } catch (e) {
+      roomBackups = {};
+    }
+
+    // 3. Load Rekap Laptops by Date
+    try {
+      const storedRekap = localStorage.getItem(STORAGE_KEY_REKAP_BY_DATE);
+      rekapLaptopsByDate = storedRekap ? JSON.parse(storedRekap) : {};
+    } catch (e) {
+      rekapLaptopsByDate = {};
+    }
+
+    // Seed initial rekap for all 4 dates if empty
+    TKA_DATES.forEach((d) => {
+      if (!rekapLaptopsByDate[d.id] || rekapLaptopsByDate[d.id].length === 0) {
+        rekapLaptopsByDate[d.id] = typeof generateMasterRekapList === "function" ? generateMasterRekapList() : [];
       }
     });
+    saveRekapLaptopsByDate();
 
-    // 2. Load Offline Queue
-    try {
-      const storedQueue = localStorage.getItem(STORAGE_KEY_QUEUE);
-      offlineQueue = storedQueue ? JSON.parse(storedQueue) : [];
-    } catch (e) {
-      offlineQueue = [];
-    }
-
-    // 3. Load or Seed Student Rekap
-    try {
-      const storedRekap = localStorage.getItem(STORAGE_KEY_REKAP);
-      if (storedRekap && JSON.parse(storedRekap).length > 0) {
-        rekapLaptops = JSON.parse(storedRekap);
-      } else {
-        rekapLaptops = typeof generateMasterRekapList === "function" ? generateMasterRekapList() : [];
-        saveRekapLaptops();
-      }
-    } catch (e) {
-      rekapLaptops = typeof generateMasterRekapList === "function" ? generateMasterRekapList() : [];
-      saveRekapLaptops();
-    }
-
-    // 4. Load or Seed Laptop Pool
+    // 4. Load Laptop Pool
     try {
       const storedPool = localStorage.getItem(STORAGE_KEY_POOL);
       if (storedPool && JSON.parse(storedPool).length > 0) {
@@ -111,7 +115,15 @@
       saveLaptopPool();
     }
 
-    // Sync input field in modal if gasUrl exists
+    // 5. Load Offline Queue
+    try {
+      const storedQueue = localStorage.getItem(STORAGE_KEY_QUEUE);
+      offlineQueue = storedQueue ? JSON.parse(storedQueue) : [];
+    } catch (e) {
+      offlineQueue = [];
+    }
+
+    // Fill settings input
     const inputGasUrl = document.getElementById("input-gas-url");
     if (inputGasUrl && gasUrl) {
       inputGasUrl.value = gasUrl;
@@ -122,25 +134,24 @@
     localStorage.setItem(STORAGE_KEY_ASSIGNMENTS, JSON.stringify(assignments));
   }
 
-  function saveLaptopPool() {
-    localStorage.setItem(STORAGE_KEY_POOL, JSON.stringify(laptopPool));
+  function saveRoomBackups() {
+    localStorage.setItem(STORAGE_KEY_BACKUPS, JSON.stringify(roomBackups));
   }
 
-  function saveRekapLaptops() {
-    localStorage.setItem(STORAGE_KEY_REKAP, JSON.stringify(rekapLaptops));
+  function saveRekapLaptopsByDate() {
+    localStorage.setItem(STORAGE_KEY_REKAP_BY_DATE, JSON.stringify(rekapLaptopsByDate));
+  }
+
+  function saveLaptopPool() {
+    localStorage.setItem(STORAGE_KEY_POOL, JSON.stringify(laptopPool));
   }
 
   function saveOfflineQueue() {
     localStorage.setItem(STORAGE_KEY_QUEUE, JSON.stringify(offlineQueue));
   }
 
-  /**
-   * Seed realistic pool of laptops for school TKA preparation
-   */
   function generateDefaultLaptopPool() {
     const list = [];
-
-    // Pre-populate with student laptops matching known metadata
     if (typeof KNOWN_STUDENTS_META !== "undefined") {
       let idx = 1;
       Object.keys(KNOWN_STUDENTS_META).forEach((nama) => {
@@ -159,7 +170,6 @@
       });
     }
 
-    // Add extra lab laptops
     const brands = [
       "Asus Vivobook 14 (Core i5, 8GB)",
       "Lenovo ThinkPad L14 (Core i5, 8GB)",
@@ -168,7 +178,7 @@
       "Dell Latitude 3420 (Core i3, 8GB)"
     ];
 
-    for (let i = list.length + 1; i <= list.length + 25; i++) {
+    for (let i = list.length + 1; i <= list.length + 30; i++) {
       list.push({
         idLaptop: `LP-${String(i).padStart(3, "0")}`,
         labelLaptop: brands[i % brands.length],
@@ -184,7 +194,117 @@
     return list;
   }
 
+  // --- CASCADING AUTO-COPY & INHERITANCE ENGINE ---
+  /**
+   * Resolves desk assignments for (date, session, room)
+   * If current session is empty, auto-copies from previous session or previous day!
+   */
+  function getEffectiveRoomAssignments(date, session, room) {
+    if (!assignments[date]) assignments[date] = {};
+    if (!assignments[date][session]) assignments[date][session] = {};
+
+    // 1. If explicit data exists for this session, return it
+    if (assignments[date][session][room] && Object.keys(assignments[date][session][room]).length > 0) {
+      return assignments[date][session][room];
+    }
+
+    // 2. Otherwise, find predecessor state to inherit/auto-copy
+    let predecessorState = null;
+
+    if (session === "Sesi 2") {
+      predecessorState = assignments[date]["Sesi 1"] && assignments[date]["Sesi 1"][room];
+    } else if (session === "Sesi 3") {
+      predecessorState = (assignments[date]["Sesi 2"] && assignments[date]["Sesi 2"][room]) ||
+                         (assignments[date]["Sesi 1"] && assignments[date]["Sesi 1"][room]);
+    } else if (session === "Sesi 1") {
+      // Find previous date
+      const dateIdx = TKA_DATES.findIndex((d) => d.id === date);
+      if (dateIdx > 0) {
+        const prevDate = TKA_DATES[dateIdx - 1].id;
+        if (assignments[prevDate]) {
+          predecessorState = (assignments[prevDate]["Sesi 3"] && assignments[prevDate]["Sesi 3"][room]) ||
+                             (assignments[prevDate]["Sesi 2"] && assignments[prevDate]["Sesi 2"][room]) ||
+                             (assignments[prevDate]["Sesi 1"] && assignments[prevDate]["Sesi 1"][room]);
+        }
+      }
+    }
+
+    // 3. If predecessor found, clone it into current session!
+    if (predecessorState && Object.keys(predecessorState).length > 0) {
+      assignments[date][session][room] = JSON.parse(JSON.stringify(predecessorState));
+      saveAssignments();
+      return assignments[date][session][room];
+    }
+
+    // 4. Default empty state
+    if (!assignments[date][session][room]) {
+      assignments[date][session][room] = {};
+    }
+    return assignments[date][session][room];
+  }
+
+  /**
+   * Resolves Room Backup Laptops for (date, session, room)
+   */
+  function getEffectiveRoomBackups(date, session, room) {
+    if (!roomBackups[date]) roomBackups[date] = {};
+    if (!roomBackups[date][session]) roomBackups[date][session] = {};
+
+    if (roomBackups[date][session][room] && roomBackups[date][session][room].length > 0) {
+      return roomBackups[date][session][room];
+    }
+
+    // Try inherit from earlier session or seed default
+    let predecessor = null;
+    if (session === "Sesi 2") {
+      predecessor = roomBackups[date]["Sesi 1"] && roomBackups[date]["Sesi 1"][room];
+    } else if (session === "Sesi 3") {
+      predecessor = (roomBackups[date]["Sesi 2"] && roomBackups[date]["Sesi 2"][room]) ||
+                    (roomBackups[date]["Sesi 1"] && roomBackups[date]["Sesi 1"][room]);
+    }
+
+    if (predecessor && predecessor.length > 0) {
+      roomBackups[date][session][room] = JSON.parse(JSON.stringify(predecessor));
+      saveRoomBackups();
+      return roomBackups[date][session][room];
+    }
+
+    // Seed from default generator
+    const defaults = typeof generateDefaultRoomBackups === "function" ? generateDefaultRoomBackups() : {};
+    roomBackups[date][session][room] = defaults[room] ? JSON.parse(JSON.stringify(defaults[room])) : [];
+    saveRoomBackups();
+    return roomBackups[date][session][room];
+  }
+
   // --- RENDERING VIEWS ---
+  function renderDatePills() {
+    const container = document.getElementById("date-pills");
+    if (!container) return;
+
+    container.innerHTML = "";
+    TKA_DATES.forEach((d) => {
+      const btn = document.createElement("button");
+      btn.dataset.date = d.id;
+      const isActive = d.id === activeDate;
+      btn.className = `date-btn px-2.5 py-1 rounded-lg font-semibold text-xs transition ${
+        isActive ? "bg-indigo-600 text-white shadow-sm" : "text-slate-600 hover:text-slate-900"
+      }`;
+      btn.textContent = `${d.label}`;
+      btn.title = d.dayName;
+      btn.addEventListener("click", () => {
+        activeDate = d.id;
+        localStorage.setItem(STORAGE_KEY_ACTIVE_DATE, activeDate);
+        renderDatePills();
+        renderActiveRoom();
+        if (currentTab === "tabel-laptop") {
+          rekapActiveDate = activeDate;
+          renderRekapLaptopTable();
+        }
+      });
+      container.appendChild(btn);
+    });
+  }
+
   function renderRoomSelector() {
     const select = document.getElementById("select-room");
     if (!select) return;
@@ -193,7 +313,8 @@
     Object.keys(ROOMS_DATA).forEach((roomName) => {
       const opt = document.createElement("option");
       opt.value = roomName;
-      opt.textContent = `${roomName} (${ROOMS_DATA[roomName].totalDesks} Meja)`;
+      const isGuru = roomName === "Ruang Guru";
+      opt.textContent = isGuru ? "⭐ Ruang Guru (Pusat Cadangan)" : `${roomName} (${ROOMS_DATA[roomName].totalDesks} Meja)`;
       if (roomName === activeRoom) opt.selected = true;
       select.appendChild(opt);
     });
@@ -205,13 +326,15 @@
 
     localStorage.setItem(STORAGE_KEY_ACTIVE_ROOM, activeRoom);
 
-    // Update Header labels
+    // Update labels
     document.getElementById("current-room-title").textContent = roomConf.name;
-    document.getElementById("current-session-label").textContent = `Menampilkan Peserta: ${activeSession}`;
+    const curDateConf = TKA_DATES.find((d) => d.id === activeDate) || TKA_DATES[0];
+    document.getElementById("current-date-label").textContent = `${curDateConf.label} (${curDateConf.dayName.split(" ")[0]})`;
+    document.getElementById("current-session-label").textContent = activeSession;
 
-    // Handle Sesi 3 visibility
+    // Check Sesi 3 visibility
     const pillSesi3 = document.getElementById("pill-sesi3");
-    const hasSesi3 = roomConf.sessions.includes("Sesi 3");
+    const hasSesi3 = roomConf.sessions && roomConf.sessions.includes("Sesi 3");
     if (pillSesi3) {
       if (hasSesi3) {
         pillSesi3.classList.remove("hidden");
@@ -224,7 +347,20 @@
       }
     }
 
-    renderDeskGrid(roomConf);
+    // Meja Pengawas Banner (hide if Ruang Guru)
+    const pengawasBanner = document.getElementById("meja-pengawas-banner");
+    if (pengawasBanner) {
+      pengawasBanner.style.display = roomConf.isBackupCenter ? "none" : "flex";
+    }
+
+    // Render Grid & Room Backups
+    if (roomConf.isBackupCenter) {
+      renderRuangGuruWorkspace();
+    } else {
+      renderDeskGrid(roomConf);
+      renderRoomBackups(activeRoom);
+    }
+
     updateRoomMetrics();
     refreshIcons();
   }
@@ -236,12 +372,14 @@
     container.innerHTML = "";
 
     const grid = roomConf.grid;
-    const numCols = grid[0].length;
+    const numCols = grid[0] ? grid[0].length : 5;
 
     const gridEl = document.createElement("div");
     gridEl.className = "grid gap-3.5 mx-auto justify-center";
     gridEl.style.gridTemplateColumns = `repeat(${numCols}, minmax(130px, 1fr))`;
     gridEl.style.maxWidth = `${numCols * 170}px`;
+
+    const roomAssignments = getEffectiveRoomAssignments(activeDate, activeSession, roomConf.name);
 
     grid.forEach((row) => {
       row.forEach((deskNo) => {
@@ -252,7 +390,7 @@
           return;
         }
 
-        const deskCard = createDeskCard(roomConf.name, deskNo);
+        const deskCard = createDeskCard(roomConf.name, deskNo, roomAssignments);
         gridEl.appendChild(deskCard);
       });
     });
@@ -260,16 +398,15 @@
     container.appendChild(gridEl);
   }
 
-  function createDeskCard(roomName, deskNo) {
+  function createDeskCard(roomName, deskNo, roomAssignments) {
     const card = document.createElement("div");
     card.className = "desk-card group relative bg-white border-2 rounded-2xl p-3 flex flex-col justify-between gap-2 shadow-xs cursor-pointer select-none transition-all";
     card.dataset.room = roomName;
     card.dataset.desk = deskNo;
 
-    const assignment = (assignments[roomName] && assignments[roomName][deskNo]) || null;
+    const assignment = (roomAssignments && roomAssignments[deskNo]) || null;
     const studentName = getStudentName(roomName, deskNo, activeSession);
 
-    // Apply color accents based on status
     if (assignment && assignment.idLaptop) {
       if (assignment.isReady && assignment.hasCharger) {
         card.classList.add("border-emerald-200", "bg-emerald-50/20", "hover:border-emerald-400");
@@ -280,7 +417,7 @@
       card.classList.add("border-dashed", "border-slate-300", "hover:border-indigo-400", "hover:bg-indigo-50/30");
     }
 
-    // Top: Desk Number & Action Badges
+    // Top: Desk Number & Badges
     const topRow = document.createElement("div");
     topRow.className = "flex items-center justify-between gap-1";
 
@@ -297,7 +434,7 @@
 
       const readyDot = document.createElement("span");
       readyDot.className = `w-2.5 h-2.5 rounded-full ${assignment.isReady ? "bg-emerald-500" : "bg-rose-500"}`;
-      readyDot.title = assignment.isReady ? "Laptop Aman" : "Laptop Tidak Aman";
+      readyDot.title = assignment.isReady ? "Aman" : "Tidak Aman";
       badgesContainer.appendChild(readyDot);
 
       const chargerIcon = document.createElement("span");
@@ -311,7 +448,7 @@
 
     card.appendChild(topRow);
 
-    // Middle: Student Name for Active Session
+    // Middle: Student Name
     const studentRow = document.createElement("div");
     studentRow.className = "flex flex-col gap-0.5 my-0.5";
     
@@ -328,7 +465,7 @@
 
     card.appendChild(studentRow);
 
-    // Bottom: Laptop Info / Drop Target
+    // Bottom: Laptop Details / Drop Target
     const bottomRow = document.createElement("div");
     bottomRow.className = "mt-auto pt-2 border-t border-slate-100 flex flex-col gap-1";
 
@@ -351,7 +488,6 @@
       laptopDetails.appendChild(laptopOwner);
       laptopRow.appendChild(laptopDetails);
 
-      // Quick unassign / remove button
       const unassignBtn = document.createElement("button");
       unassignBtn.className = "p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition";
       unassignBtn.title = "Lepas laptop dari meja ini";
@@ -380,7 +516,7 @@
 
     card.appendChild(bottomRow);
 
-    // Drag and Drop Handlers
+    // HTML5 Drag and Drop
     if (assignment && assignment.idLaptop) {
       card.setAttribute("draggable", "true");
       card.addEventListener("dragstart", (e) => {
@@ -418,6 +554,8 @@
 
         if (dragData.source === "pool") {
           assignLaptopToDesk(roomName, deskNo, dragData.idLaptop);
+        } else if (dragData.source === "backup") {
+          assignBackupLaptopToDesk(roomName, deskNo, dragData.idLaptop);
         } else if (dragData.source === "desk") {
           moveLaptopBetweenDesks(dragData.fromRoom, dragData.fromDesk, roomName, deskNo);
         }
@@ -431,6 +569,178 @@
     });
 
     return card;
+  }
+
+  // --- ROOM BACKUPS & RUANG GURU WORKSPACE ---
+  function renderRoomBackups(roomName) {
+    const container = document.getElementById("room-backups-container");
+    const countBadge = document.getElementById("room-backup-count-badge");
+    const section = document.getElementById("room-backups-section");
+    if (!container || !section) return;
+
+    section.style.display = "flex";
+
+    const backups = getEffectiveRoomBackups(activeDate, activeSession, roomName);
+    if (countBadge) countBadge.textContent = `${backups.length} Unit Siap Pakai`;
+
+    container.innerHTML = "";
+
+    if (backups.length === 0) {
+      container.innerHTML = `
+        <div class="col-span-full py-4 text-center text-slate-400 text-xs italic">
+          Belum ada laptop cadangan di ruangan ini. Tarik dari Ruang Guru atau Pool.
+        </div>
+      `;
+      return;
+    }
+
+    backups.forEach((b, idx) => {
+      const card = document.createElement("div");
+      card.className = "bg-amber-50/50 hover:bg-amber-50 border border-amber-200 hover:border-amber-400 rounded-xl p-3 flex flex-col justify-between gap-2 shadow-2xs cursor-grab active:cursor-grabbing transition";
+      card.setAttribute("draggable", "true");
+
+      card.addEventListener("dragstart", (e) => {
+        e.dataTransfer.setData("text/plain", JSON.stringify({
+          source: "backup",
+          fromRoom: roomName,
+          backupIdx: idx,
+          idLaptop: b.idLaptop
+        }));
+        card.classList.add("dragging");
+      });
+      card.addEventListener("dragend", () => card.classList.remove("dragging"));
+
+      card.innerHTML = `
+        <div class="flex items-center justify-between">
+          <span class="px-2 py-0.5 rounded-md font-bold text-xs bg-amber-200 text-amber-900">${b.idLaptop}</span>
+          <div class="flex items-center gap-1.5">
+            <span class="w-2.5 h-2.5 rounded-full ${b.isReady ? "bg-emerald-500" : "bg-rose-500"}" title="${b.isReady ? "Aman" : "Tidak Aman"}"></span>
+            <span class="text-xs font-bold ${b.hasCharger ? "text-amber-600" : "text-rose-500"}">${b.hasCharger ? "⚡" : "✕"}</span>
+          </div>
+        </div>
+
+        <div class="flex flex-col">
+          <span class="text-xs font-bold text-slate-900 truncate">${b.labelLaptop}</span>
+          <span class="text-[10px] text-slate-500 truncate">${b.pemilikLaptop}</span>
+          ${b.catatan ? `<span class="text-[10px] text-amber-800 mt-1">📝 ${b.catatan}</span>` : ""}
+        </div>
+
+        <div class="pt-2 border-t border-amber-200/60 flex items-center justify-between text-[11px]">
+          <span class="text-amber-700 font-semibold">Siap Ditukar</span>
+          <span class="text-slate-400 italic">Tarik ke meja</span>
+        </div>
+      `;
+
+      container.appendChild(card);
+    });
+  }
+
+  function renderRuangGuruWorkspace() {
+    const container = document.getElementById("desk-grid-container");
+    const backupsSection = document.getElementById("room-backups-section");
+    if (!container) return;
+
+    if (backupsSection) backupsSection.style.display = "none";
+
+    container.innerHTML = "";
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "flex flex-col gap-5 w-full";
+
+    const guruBackups = getEffectiveRoomBackups(activeDate, activeSession, "Ruang Guru");
+
+    wrapper.innerHTML = `
+      <div class="bg-gradient-to-r from-indigo-900 to-slate-900 text-white rounded-2xl p-6 shadow-md flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div>
+          <div class="flex items-center gap-2 mb-1">
+            <span class="px-2.5 py-0.5 rounded-full bg-indigo-500/30 text-indigo-200 text-xs font-bold border border-indigo-400/30">
+              Posko IT & Panitia
+            </span>
+            <span class="text-xs text-slate-300">Total Stok: ${guruBackups.length} Unit</span>
+          </div>
+          <h2 class="text-xl font-black">Ruang Guru (Pusat Cadangan Sekolah)</h2>
+          <p class="text-xs text-slate-300 mt-1 max-w-xl">
+            Pusat penyimpanan unit laptop cadangan, charger cadangan, dan pengganti darurat. Anda dapat mendistribusikan unit cadangan ini ke Ruang 1 s.d. 11 kapan saja.
+          </p>
+        </div>
+        <button id="btn-guru-add-spare" class="px-4 py-2.5 rounded-xl bg-white text-indigo-900 font-bold text-xs shadow-md hover:bg-indigo-50 transition flex items-center gap-2 flex-shrink-0">
+          <i data-lucide="plus-circle" class="w-4 h-4 text-indigo-600"></i>
+          <span>Tambah Stok Cadangan</span>
+        </button>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 pt-2">
+        ${guruBackups.map((b, idx) => `
+          <div class="bg-slate-50 border border-slate-200 hover:border-indigo-400 rounded-2xl p-4 flex flex-col justify-between gap-3 shadow-2xs hover:shadow-sm transition">
+            <div class="flex items-center justify-between">
+              <span class="px-2 py-0.5 rounded-md font-black text-xs bg-indigo-100 text-indigo-900">${b.idLaptop}</span>
+              <div class="flex items-center gap-1.5">
+                <span class="w-2.5 h-2.5 rounded-full ${b.isReady ? "bg-emerald-500" : "bg-rose-500"}"></span>
+                <span class="text-xs font-bold ${b.hasCharger ? "text-amber-600" : "text-rose-500"}">${b.hasCharger ? "⚡" : "✕"}</span>
+              </div>
+            </div>
+
+            <div class="flex flex-col">
+              <span class="text-xs font-bold text-slate-900">${b.labelLaptop}</span>
+              <span class="text-[11px] text-slate-500">${b.pemilikLaptop}</span>
+              ${b.catatan ? `<span class="text-[10px] text-slate-600 mt-1 bg-white p-1 rounded border border-slate-200">📝 ${b.catatan}</span>` : ""}
+            </div>
+
+            <div class="pt-2 border-t border-slate-200 flex items-center justify-between text-xs">
+              <span class="text-emerald-700 font-bold">Stok Siap</span>
+              <button class="btn-dispatch-spare text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-1" data-idx="${idx}">
+                <span>Kirim ke Ruang</span>
+                <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i>
+              </button>
+            </div>
+          </div>
+        `).join("")}
+      </div>
+    `;
+
+    container.appendChild(wrapper);
+
+    // Event listeners inside Ruang Guru view
+    const btnAdd = wrapper.querySelector("#btn-guru-add-spare");
+    if (btnAdd) {
+      btnAdd.addEventListener("click", () => {
+        document.getElementById("modal-add-laptop").classList.remove("hidden");
+      });
+    }
+
+    wrapper.querySelectorAll(".btn-dispatch-spare").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const idx = Number(btn.dataset.idx);
+        promptDispatchSpareFromGuru(idx);
+      });
+    });
+
+    refreshIcons();
+  }
+
+  function promptDispatchSpareFromGuru(backupIdx) {
+    const guruBackups = getEffectiveRoomBackups(activeDate, activeSession, "Ruang Guru");
+    const item = guruBackups[backupIdx];
+    if (!item) return;
+
+    const targetRoom = prompt(`Kirim laptop ${item.idLaptop} ke ruangan mana? (Contoh: Ruang 1, Ruang 5, Ruang 8)`);
+    if (!targetRoom || !ROOMS_DATA[targetRoom]) {
+      if (targetRoom) showToast(`Ruangan '${targetRoom}' tidak ditemukan.`, "error");
+      return;
+    }
+
+    // Move from Ruang Guru to target room's backups
+    guruBackups.splice(backupIdx, 1);
+    const targetBackups = getEffectiveRoomBackups(activeDate, activeSession, targetRoom);
+    targetBackups.push({
+      ...item,
+      room: targetRoom,
+      pemilikLaptop: `Unit Cadangan ${targetRoom} (dari Ruang Guru)`
+    });
+
+    saveRoomBackups();
+    renderActiveRoom();
+    showToast(`Laptop ${item.idLaptop} berhasil dikirim ke ${targetRoom}`, "success");
   }
 
   function renderLaptopPool() {
@@ -544,36 +854,52 @@
     const total = roomConf.totalDesks;
     let assignedCount = 0;
     let readyCount = 0;
-    let chargerCount = 0;
 
-    const roomAssignments = assignments[activeRoom] || {};
+    const roomAssignments = getEffectiveRoomAssignments(activeDate, activeSession, activeRoom);
     Object.values(roomAssignments).forEach((a) => {
       if (a && a.idLaptop) {
         assignedCount++;
         if (a.isReady) readyCount++;
-        if (a.hasCharger) chargerCount++;
       }
     });
 
+    const backups = getEffectiveRoomBackups(activeDate, activeSession, activeRoom);
+
     const metricAssigned = document.getElementById("metric-assigned");
     const metricReady = document.getElementById("metric-ready");
-    const metricCharger = document.getElementById("metric-charger");
+    const metricRoomBackups = document.getElementById("metric-room-backups");
 
     if (metricAssigned) metricAssigned.textContent = `${assignedCount}/${total}`;
     if (metricReady) metricReady.textContent = readyCount;
-    if (metricCharger) metricCharger.textContent = chargerCount;
+    if (metricRoomBackups) metricRoomBackups.textContent = backups.length;
   }
 
-  // --- VIEW 2: SPREADSHEET REKAP LAPTOP TABLE ---
+  // --- VIEW 2: SPREADSHEET REKAP LAPTOP TABLE (WITH SESI 1, SESI 2, SESI 3) ---
   function renderRekapLaptopTable() {
     const tbody = document.getElementById("rekap-table-body");
+    const activeSheetBadge = document.getElementById("rekap-active-sheet-badge");
     if (!tbody) return;
+
+    const curDateConf = TKA_DATES.find((d) => d.id === rekapActiveDate) || TKA_DATES[0];
+    if (activeSheetBadge) {
+      activeSheetBadge.textContent = `Sheet: ${curDateConf.sheetName}`;
+    }
+
+    // Update active tab buttons
+    document.querySelectorAll(".rekap-date-tab").forEach((btn) => {
+      if (btn.dataset.date === rekapActiveDate) {
+        btn.className = "rekap-date-tab px-3.5 py-1.5 rounded-xl font-bold text-xs bg-indigo-600 text-white shadow-sm flex items-center gap-1.5 transition";
+      } else {
+        btn.className = "rekap-date-tab px-3.5 py-1.5 rounded-xl font-bold text-xs bg-slate-100 text-slate-700 hover:bg-slate-200 flex items-center gap-1.5 transition";
+      }
+    });
 
     tbody.innerHTML = "";
 
-    let filtered = [...rekapLaptops];
+    const dateList = rekapLaptopsByDate[rekapActiveDate] || [];
+    let filtered = [...dateList];
 
-    // 1. Text Search (NIS, Nama, Kelas)
+    // Search filter
     if (rekapSearch.trim()) {
       const q = rekapSearch.toLowerCase().trim();
       filtered = filtered.filter((r) => 
@@ -583,22 +909,22 @@
       );
     }
 
-    // 2. Ruang Laptop Filter
+    // Ruang Laptop Filter
     if (rekapFilterRuangLaptop !== "ALL") {
-      filtered = filtered.filter((r) => String(r.ruangLaptop).toUpperCase() === rekapFilterRuangLaptop);
+      filtered = filtered.filter((r) => String(r.ruangLaptop).toUpperCase() === rekapFilterRuangLaptop.toUpperCase());
     }
 
-    // 3. Ruang Kelas Filter
+    // Ruang Kelas Filter
     if (rekapFilterRuangKelas !== "ALL") {
-      filtered = filtered.filter((r) => String(r.ruangKelas).toUpperCase() === rekapFilterRuangKelas);
+      filtered = filtered.filter((r) => String(r.ruangKelas).toUpperCase() === rekapFilterRuangKelas.toUpperCase());
     }
 
-    // 4. Cross Room Toggle (Ruang Laptop != Ruang Kelas)
+    // Cross-Room Toggle
     if (rekapOnlyCross) {
       filtered = filtered.filter((r) => String(r.ruangLaptop).trim().toUpperCase() !== String(r.ruangKelas).trim().toUpperCase());
     }
 
-    // 5. Issues Toggle (Tidak aman, tanpa charger, atau belum di ruangan)
+    // Issues Toggle
     if (rekapOnlyIssues) {
       filtered = filtered.filter((r) => 
         r.charger === "TIDAK ADA" || 
@@ -607,11 +933,10 @@
       );
     }
 
-    // Update table counters
     let countNoCharger = 0;
     let countNotSafe = 0;
 
-    rekapLaptops.forEach((r) => {
+    dateList.forEach((r) => {
       if (r.charger === "TIDAK ADA") countNoCharger++;
       if (r.laptop === "TIDAK AMAN") countNotSafe++;
     });
@@ -623,10 +948,10 @@
     if (filtered.length === 0) {
       tbody.innerHTML = `
         <tr>
-          <td colspan="11" class="py-12 text-center text-slate-400">
+          <td colspan="13" class="py-12 text-center text-slate-400">
             <div class="flex flex-col items-center gap-2">
               <i data-lucide="filter-x" class="w-8 h-8 text-slate-300"></i>
-              <span>Tidak ada data siswa yang cocok dengan filter.</span>
+              <span>Tidak ada data siswa yang cocok dengan filter pada tanggal ${curDateConf.label}.</span>
             </div>
           </td>
         </tr>
@@ -644,7 +969,6 @@
         <td class="py-2.5 px-3 font-mono font-bold text-slate-700 whitespace-nowrap">${row.nis || "-"}</td>
         <td class="py-2.5 px-3 font-bold text-slate-900 whitespace-nowrap">${row.nama}</td>
         <td class="py-2.5 px-2 text-center whitespace-nowrap text-slate-600 font-semibold">${row.kelas || "-"}</td>
-        <td class="py-2.5 px-2 text-center whitespace-nowrap font-bold text-slate-700">${row.sesi || 1}</td>
         <td class="py-2.5 px-2 text-center whitespace-nowrap">
           <span class="px-2 py-0.5 rounded-md font-bold text-slate-700 bg-slate-100 border border-slate-200">
             ${row.ruangKelas || "-"}
@@ -654,6 +978,15 @@
           <span class="px-2 py-0.5 rounded-md font-bold ${isCross ? "bg-amber-100 text-amber-900 border border-amber-300 ring-2 ring-amber-200" : "bg-indigo-50 text-indigo-700 border border-indigo-200"}">
             ${row.ruangLaptop || "-"}
           </span>
+        </td>
+        <td class="py-2.5 px-2 text-center whitespace-nowrap font-bold text-indigo-900 bg-slate-100/70 border-x border-slate-200/50">
+          ${row.sesi1 || "-"}
+        </td>
+        <td class="py-2.5 px-2 text-center whitespace-nowrap font-bold text-indigo-900 bg-slate-100/70 border-r border-slate-200/50">
+          ${row.sesi2 || "-"}
+        </td>
+        <td class="py-2.5 px-2 text-center whitespace-nowrap font-bold text-indigo-900 bg-slate-100/70 border-r border-slate-200/50">
+          ${row.sesi3 || "-"}
         </td>
         <td class="py-2.5 px-2 text-center whitespace-nowrap">
           <input type="checkbox" class="rekap-cb-keberadaan w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer" data-nis="${row.nis}" data-nama="${row.nama}" ${row.keberadaan ? "checked" : ""}>
@@ -683,10 +1016,10 @@
       tbody.appendChild(tr);
     });
 
-    // Attach dynamic listeners inside table
+    // Attach listeners
     tbody.querySelectorAll(".rekap-cb-keberadaan").forEach((cb) => {
       cb.addEventListener("change", (e) => {
-        updateRekapItem(e.target.dataset.nis, e.target.dataset.nama, {
+        updateRekapItem(rekapActiveDate, e.target.dataset.nis, e.target.dataset.nama, {
           keberadaan: e.target.checked
         });
       });
@@ -695,12 +1028,10 @@
     tbody.querySelectorAll(".rekap-select-charger").forEach((sel) => {
       sel.addEventListener("change", (e) => {
         const val = e.target.value;
-        if (val === "TIDAK ADA") {
-          sel.className = "rekap-select-charger appearance-none px-2 py-1 rounded-lg text-xs font-bold border cursor-pointer bg-red-600 text-white border-red-700 shadow-sm";
-        } else {
-          sel.className = "rekap-select-charger appearance-none px-2 py-1 rounded-lg text-xs font-bold border cursor-pointer bg-slate-100 text-slate-800 border-slate-300";
-        }
-        updateRekapItem(e.target.dataset.nis, e.target.dataset.nama, {
+        sel.className = `rekap-select-charger appearance-none px-2 py-1 rounded-lg text-xs font-bold border cursor-pointer ${
+          val === "TIDAK ADA" ? "bg-red-600 text-white border-red-700 shadow-sm" : "bg-slate-100 text-slate-800 border-slate-300"
+        }`;
+        updateRekapItem(rekapActiveDate, e.target.dataset.nis, e.target.dataset.nama, {
           charger: val
         });
       });
@@ -709,12 +1040,10 @@
     tbody.querySelectorAll(".rekap-select-laptop").forEach((sel) => {
       sel.addEventListener("change", (e) => {
         const val = e.target.value;
-        if (val === "TIDAK AMAN") {
-          sel.className = "rekap-select-laptop appearance-none px-2 py-1 rounded-lg text-xs font-bold border cursor-pointer bg-amber-500 text-white border-amber-600";
-        } else {
-          sel.className = "rekap-select-laptop appearance-none px-2 py-1 rounded-lg text-xs font-bold border cursor-pointer bg-slate-100 text-slate-800 border-slate-300";
-        }
-        updateRekapItem(e.target.dataset.nis, e.target.dataset.nama, {
+        sel.className = `rekap-select-laptop appearance-none px-2 py-1 rounded-lg text-xs font-bold border cursor-pointer ${
+          val === "TIDAK AMAN" ? "bg-amber-500 text-white border-amber-600" : "bg-slate-100 text-slate-800 border-slate-300"
+        }`;
+        updateRekapItem(rekapActiveDate, e.target.dataset.nis, e.target.dataset.nama, {
           laptop: val
         });
       });
@@ -722,7 +1051,7 @@
 
     tbody.querySelectorAll(".rekap-input-keterangan").forEach((inp) => {
       inp.addEventListener("blur", (e) => {
-        updateRekapItem(e.target.dataset.nis, e.target.dataset.nama, {
+        updateRekapItem(rekapActiveDate, e.target.dataset.nis, e.target.dataset.nama, {
           keterangan: e.target.value.trim()
         });
       });
@@ -731,10 +1060,12 @@
     tbody.querySelectorAll(".rekap-btn-jump").forEach((btn) => {
       btn.addEventListener("click", () => {
         const rCode = btn.dataset.room;
-        const targetRoomName = rCode.replace("R", "Ruang ");
+        const targetRoomName = rCode === "Ruang Guru" ? "Ruang Guru" : rCode.replace("R", "Ruang ");
         if (ROOMS_DATA[targetRoomName]) {
           activeRoom = targetRoomName;
           document.getElementById("select-room").value = targetRoomName;
+          activeDate = rekapActiveDate;
+          renderDatePills();
           switchTab("denah");
           renderActiveRoom();
         }
@@ -744,30 +1075,34 @@
     refreshIcons();
   }
 
-  function updateRekapItem(nis, nama, changes) {
-    let item = rekapLaptops.find((r) => (nis && r.nis === nis) || (r.nama === nama));
+  function updateRekapItem(date, nis, nama, changes) {
+    const list = rekapLaptopsByDate[date] || [];
+    let item = list.find((r) => (nis && r.nis === nis) || (r.nama === nama));
     if (!item) return;
 
     Object.assign(item, changes);
-    saveRekapLaptops();
+    saveRekapLaptopsByDate();
 
-    // Cross-sync to desk assignment if assigned to active desks
-    const roomName = item.ruangLaptop.replace("R", "Ruang ");
-    if (item.noMeja && assignments[roomName] && assignments[roomName][item.noMeja]) {
-      const a = assignments[roomName][item.noMeja];
-      if (changes.charger !== undefined) a.hasCharger = changes.charger === "ADA";
-      if (changes.laptop !== undefined) a.isReady = changes.laptop === "AMAN";
-      if (changes.keterangan !== undefined) a.catatan = changes.keterangan;
+    // Cross-sync to current active desk if matches
+    const rName = item.ruangLaptop === "Ruang Guru" ? "Ruang Guru" : item.ruangLaptop.replace("R", "Ruang ");
+    const roomAssignments = assignments[date] && assignments[date][activeSession] && assignments[date][activeSession][rName];
+    if (roomAssignments) {
+      Object.values(roomAssignments).forEach((a) => {
+        if (a && a.pemilikLaptop === item.nama) {
+          if (changes.charger !== undefined) a.hasCharger = changes.charger === "ADA";
+          if (changes.laptop !== undefined) a.isReady = changes.laptop === "AMAN";
+          if (changes.keterangan !== undefined) a.catatan = changes.keterangan;
+        }
+      });
       saveAssignments();
       renderActiveRoom();
     }
 
-    // Trigger GAS sync
-    syncRekapRowToGAS(item);
+    syncRekapRowToGAS(date, item);
     showToast(`Data ${item.nama} diperbarui`, "success");
   }
 
-  // --- VIEW 3: OVERVIEW PANITIA ---
+  // --- VIEW 3: OVERVIEW RUANG ---
   function renderRekapOverview() {
     const container = document.getElementById("rooms-overview-cards");
     if (!container) return;
@@ -781,10 +1116,11 @@
 
     Object.keys(ROOMS_DATA).forEach((roomName) => {
       const conf = ROOMS_DATA[roomName];
+      const isGuru = roomName === "Ruang Guru";
       const totalDesks = conf.totalDesks;
       totalAllDesks += totalDesks;
 
-      const roomAssignments = assignments[roomName] || {};
+      const roomAssignments = getEffectiveRoomAssignments(activeDate, activeSession, roomName);
       let assigned = 0;
       let ready = 0;
       let chargers = 0;
@@ -797,11 +1133,13 @@
         }
       });
 
+      const backups = getEffectiveRoomBackups(activeDate, activeSession, roomName);
+
       totalAllAssigned += assigned;
       totalAllReady += ready;
       totalAllChargers += chargers;
 
-      const pct = Math.round((assigned / totalDesks) * 100);
+      const pct = totalDesks > 0 ? Math.round((assigned / totalDesks) * 100) : 100;
 
       const card = document.createElement("div");
       card.className = "bg-slate-50 border border-slate-200 hover:border-indigo-300 rounded-2xl p-4 flex flex-col justify-between gap-3 shadow-2xs transition";
@@ -810,31 +1148,40 @@
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-2">
             <span class="w-8 h-8 rounded-xl bg-white border border-slate-200 flex items-center justify-center font-bold text-slate-800 text-xs shadow-2xs">
-              ${roomName.replace("Ruang ", "R")}
+              ${isGuru ? "RG" : roomName.replace("Ruang ", "R")}
             </span>
             <div>
               <h3 class="font-bold text-sm text-slate-900">${roomName}</h3>
-              <p class="text-[11px] text-slate-500">${conf.sessions.join(", ")}</p>
+              <p class="text-[11px] text-slate-500">${isGuru ? "Pusat Cadangan" : conf.sessions.join(", ")}</p>
             </div>
           </div>
-          <span class="px-2.5 py-0.5 rounded-full text-xs font-bold ${pct === 100 ? "bg-emerald-100 text-emerald-800" : "bg-indigo-100 text-indigo-800"}">
-            ${pct}%
+          <span class="px-2.5 py-0.5 rounded-full text-xs font-bold ${
+            isGuru ? "bg-amber-100 text-amber-900" : (pct === 100 ? "bg-emerald-100 text-emerald-800" : "bg-indigo-100 text-indigo-800")
+          }">
+            ${isGuru ? `${backups.length} Stok` : `${pct}%`}
           </span>
         </div>
 
-        <div class="flex flex-col gap-1">
-          <div class="flex items-center justify-between text-xs text-slate-600">
-            <span>Terisi: <strong>${assigned}/${totalDesks}</strong> Meja</span>
-            <span>Aman: <strong class="text-emerald-600">${ready}</strong></span>
+        ${!isGuru ? `
+          <div class="flex flex-col gap-1">
+            <div class="flex items-center justify-between text-xs text-slate-600">
+              <span>Terisi: <strong>${assigned}/${totalDesks}</strong> Meja</span>
+              <span>Aman: <strong class="text-emerald-600">${ready}</strong></span>
+            </div>
+            <div class="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+              <div class="bg-indigo-600 h-2 rounded-full transition-all" style="width: ${pct}%"></div>
+            </div>
           </div>
-          <div class="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
-            <div class="bg-indigo-600 h-2 rounded-full transition-all" style="width: ${pct}%"></div>
+        ` : `
+          <div class="text-xs text-slate-600 bg-white p-2.5 rounded-xl border border-slate-200 flex items-center justify-between">
+            <span>Stok Posko: <strong>${backups.length}</strong> Unit</span>
+            <span class="text-emerald-600 font-bold">Siap Suplai</span>
           </div>
-        </div>
+        `}
 
         <div class="flex items-center justify-between pt-1 border-t border-slate-200 text-xs">
           <span class="text-amber-600 font-semibold flex items-center gap-1">
-            <span>⚡</span> ${chargers} Charger
+            <span>⚡</span> ${isGuru ? `${backups.length} Charger` : `${backups.length} Cadangan`}
           </span>
           <button class="btn-jump-room text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-1" data-room="${roomName}">
             <span>Buka Ruang</span>
@@ -871,19 +1218,16 @@
     const laptop = laptopPool.find((l) => l.idLaptop === idLaptop);
     if (!laptop) return;
 
-    if (laptop.assignedRoom && laptop.assignedDesk) {
-      if (assignments[laptop.assignedRoom]) {
-        delete assignments[laptop.assignedRoom][laptop.assignedDesk];
-      }
-    }
-
-    if (!assignments[roomName]) assignments[roomName] = {};
+    // Ensure session map exists
+    if (!assignments[activeDate]) assignments[activeDate] = {};
+    if (!assignments[activeDate][activeSession]) assignments[activeDate][activeSession] = {};
+    if (!assignments[activeDate][activeSession][roomName]) assignments[activeDate][activeSession][roomName] = {};
 
     const isReady = customDetails ? customDetails.isReady : laptop.isReady;
     const hasCharger = customDetails ? customDetails.hasCharger : laptop.hasCharger;
     const catatan = customDetails ? customDetails.catatan : (laptop.catatan || "");
 
-    assignments[roomName][deskNo] = {
+    assignments[activeDate][activeSession][roomName][deskNo] = {
       idLaptop: laptop.idLaptop,
       labelLaptop: laptop.labelLaptop,
       pemilikLaptop: laptop.pemilikLaptop,
@@ -899,19 +1243,12 @@
     laptop.hasCharger = hasCharger;
     laptop.catatan = catatan;
 
-    // Cross-sync to student rekap record
-    const rCode = roomName.replace("Ruang ", "R");
-    let rekapItem = rekapLaptops.find((r) => r.nama === laptop.pemilikLaptop);
-    if (rekapItem) {
-      rekapItem.ruangLaptop = rCode;
-      rekapItem.noMeja = deskNo;
-      rekapItem.keberadaan = true;
-      rekapItem.charger = hasCharger ? "ADA" : "TIDAK ADA";
-      rekapItem.laptop = isReady ? "AMAN" : "TIDAK AMAN";
-      rekapItem.keterangan = catatan;
-      saveRekapLaptops();
-      syncRekapRowToGAS(rekapItem);
-    }
+    // Update Sesi column in Rekap for activeDate
+    updateRekapDeskPosition(activeDate, laptop.pemilikLaptop, roomName, deskNo, activeSession, {
+      hasCharger,
+      isReady,
+      catatan
+    });
 
     saveAssignments();
     saveLaptopPool();
@@ -919,18 +1256,36 @@
     renderLaptopPool();
     if (currentTab === "tabel-laptop") renderRekapLaptopTable();
 
-    syncAssignmentToGAS(roomName, deskNo);
-    showToast(`Laptop ${idLaptop} dipasang ke ${roomName} Meja ${deskNo}`, "success");
+    syncAssignmentToGAS(activeDate, activeSession, roomName, deskNo);
+    showToast(`Laptop ${idLaptop} dipasang ke ${roomName} Meja ${deskNo} (${activeDate} ${activeSession})`, "success");
+  }
+
+  function assignBackupLaptopToDesk(roomName, deskNo, idLaptop) {
+    const backups = getEffectiveRoomBackups(activeDate, activeSession, roomName);
+    const bIdx = backups.findIndex((b) => b.idLaptop === idLaptop);
+    if (bIdx === -1) return;
+
+    const bItem = backups[bIdx];
+    backups.splice(bIdx, 1); // Remove from backups
+    saveRoomBackups();
+
+    // Assign to desk
+    assignLaptopToDesk(roomName, deskNo, bItem.idLaptop, {
+      isReady: bItem.isReady,
+      hasCharger: bItem.hasCharger,
+      catatan: bItem.catatan || `Cadangan ${roomName}`
+    });
   }
 
   function unassignLaptopFromDesk(roomName, deskNo) {
-    if (!assignments[roomName] || !assignments[roomName][deskNo]) return;
+    const roomAssignments = getEffectiveRoomAssignments(activeDate, activeSession, roomName);
+    if (!roomAssignments || !roomAssignments[deskNo]) return;
 
-    const assignment = assignments[roomName][deskNo];
+    const assignment = roomAssignments[deskNo];
     const idLaptop = assignment.idLaptop;
     const pemilik = assignment.pemilikLaptop;
 
-    delete assignments[roomName][deskNo];
+    delete roomAssignments[deskNo];
 
     const laptop = laptopPool.find((l) => l.idLaptop === idLaptop);
     if (laptop) {
@@ -938,14 +1293,9 @@
       laptop.assignedDesk = null;
     }
 
-    // Clear noMeja in rekap
+    // Clear desk position for this session in rekap
     if (pemilik) {
-      const rekapItem = rekapLaptops.find((r) => r.nama === pemilik);
-      if (rekapItem) {
-        rekapItem.noMeja = "";
-        saveRekapLaptops();
-        syncRekapRowToGAS(rekapItem);
-      }
+      clearRekapDeskPosition(activeDate, pemilik, activeSession);
     }
 
     saveAssignments();
@@ -954,18 +1304,20 @@
     renderLaptopPool();
     if (currentTab === "tabel-laptop") renderRekapLaptopTable();
 
-    syncAssignmentToGAS(roomName, deskNo, true);
+    syncAssignmentToGAS(activeDate, activeSession, roomName, deskNo, true);
     showToast(`Laptop ${idLaptop} dilepas dari Meja ${deskNo}`, "info");
   }
 
   function moveLaptopBetweenDesks(fromRoom, fromDesk, toRoom, toDesk) {
     if (fromRoom === toRoom && fromDesk === toDesk) return;
 
-    const fromAssignment = assignments[fromRoom] && assignments[fromRoom][fromDesk];
+    const fromAssignments = getEffectiveRoomAssignments(activeDate, activeSession, fromRoom);
+    const fromAssignment = fromAssignments && fromAssignments[fromDesk];
     if (!fromAssignment) return;
 
     const idLaptop = fromAssignment.idLaptop;
-    const existingTarget = assignments[toRoom] && assignments[toRoom][toDesk];
+    const toAssignments = getEffectiveRoomAssignments(activeDate, activeSession, toRoom);
+    const existingTarget = toAssignments && toAssignments[toDesk];
 
     if (existingTarget && existingTarget.idLaptop) {
       assignLaptopToDesk(fromRoom, fromDesk, existingTarget.idLaptop);
@@ -982,9 +1334,9 @@
 
   function quickAssignToFirstAvailableDesk(idLaptop) {
     const roomConf = ROOMS_DATA[activeRoom];
-    if (!roomConf) return;
+    if (!roomConf || roomConf.isBackupCenter) return;
 
-    const roomAssignments = assignments[activeRoom] || {};
+    const roomAssignments = getEffectiveRoomAssignments(activeDate, activeSession, activeRoom);
     let targetDesk = null;
 
     for (let d = 1; d <= roomConf.totalDesks; d++) {
@@ -1002,25 +1354,109 @@
     assignLaptopToDesk(activeRoom, targetDesk, idLaptop);
   }
 
-  // --- SYNC PIPELINE & GAS BACKEND ---
-  function syncAssignmentToGAS(roomName, deskNo, isUnassign = false) {
-    const roomConf = ROOMS_DATA[roomName];
-    const roster = roomConf ? roomConf.roster[deskNo] || {} : {};
-    const assignment = (assignments[roomName] && assignments[roomName][deskNo]) || {};
+  // --- SWAP WITH ROOM BACKUP ---
+  function swapCurrentDeskWithRoomBackup(roomName, deskNo) {
+    const roomAssignments = getEffectiveRoomAssignments(activeDate, activeSession, roomName);
+    const curAssignment = roomAssignments && roomAssignments[deskNo];
+    if (!curAssignment) {
+      showToast("Meja ini belum memiliki laptop untuk ditukar.", "warning");
+      return;
+    }
+
+    const backups = getEffectiveRoomBackups(activeDate, activeSession, roomName);
+    if (backups.length === 0) {
+      showToast(`Tidak ada laptop cadangan di ${roomName}. Minta suplai dari Ruang Guru.`, "error");
+      return;
+    }
+
+    // 1. Take first backup laptop
+    const backupLaptop = backups.shift();
+
+    // 2. Move broken laptop to backups as TIDAK AMAN
+    backups.push({
+      idLaptop: curAssignment.idLaptop,
+      labelLaptop: curAssignment.labelLaptop,
+      pemilikLaptop: curAssignment.pemilikLaptop,
+      isReady: false,
+      hasCharger: curAssignment.hasCharger,
+      catatan: `Bermasalah dari Meja ${deskNo} (Sesi: ${activeSession}): ${curAssignment.catatan || "Perlu perbaikan"}`,
+      isBackup: true,
+      room: roomName
+    });
+    saveRoomBackups();
+
+    // 3. Assign backup laptop to desk
+    assignLaptopToDesk(roomName, deskNo, backupLaptop.idLaptop, {
+      isReady: backupLaptop.isReady,
+      hasCharger: backupLaptop.hasCharger,
+      catatan: `Unit Cadangan (${backupLaptop.idLaptop})`
+    });
+
+    closeDeskInspectionModal();
+    showToast(`Laptop Meja ${deskNo} berhasil ditukar dengan cadangan ${backupLaptop.idLaptop}!`, "success");
+  }
+
+  // --- REKAP COLUMN HELPERS (SESI 1, SESI 2, SESI 3) ---
+  function updateRekapDeskPosition(date, ownerName, roomName, deskNo, session, details = {}) {
+    const list = rekapLaptopsByDate[date] || [];
+    let item = list.find((r) => r.nama === ownerName);
+    if (!item) return;
+
+    const rCode = roomName === "Ruang Guru" ? "Ruang Guru" : roomName.replace("Ruang ", "R");
+    const deskText = `Meja ${deskNo}`;
+
+    item.ruangLaptop = rCode;
+    item.keberadaan = true;
+    if (details.hasCharger !== undefined) item.charger = details.hasCharger ? "ADA" : "TIDAK ADA";
+    if (details.isReady !== undefined) item.laptop = details.isReady ? "AMAN" : "TIDAK AMAN";
+    if (details.catatan !== undefined) item.keterangan = details.catatan;
+
+    if (session === "Sesi 1") {
+      item.sesi1 = deskText;
+      // Propagate forward if subsequent sessions are unassigned
+      if (!item.sesi2 || item.sesi2 === "-") item.sesi2 = deskText;
+      if (!item.sesi3 || item.sesi3 === "-") item.sesi3 = deskText;
+    } else if (session === "Sesi 2") {
+      item.sesi2 = deskText;
+      if (!item.sesi3 || item.sesi3 === "-") item.sesi3 = deskText;
+    } else if (session === "Sesi 3") {
+      item.sesi3 = deskText;
+    }
+
+    saveRekapLaptopsByDate();
+    syncRekapRowToGAS(date, item);
+  }
+
+  function clearRekapDeskPosition(date, ownerName, session) {
+    const list = rekapLaptopsByDate[date] || [];
+    let item = list.find((r) => r.nama === ownerName);
+    if (!item) return;
+
+    if (session === "Sesi 1") item.sesi1 = "-";
+    else if (session === "Sesi 2") item.sesi2 = "-";
+    else if (session === "Sesi 3") item.sesi3 = "-";
+
+    saveRekapLaptopsByDate();
+    syncRekapRowToGAS(date, item);
+  }
+
+  // --- GAS SYNC PIPELINE ---
+  function syncAssignmentToGAS(date, session, roomName, deskNo, isUnassign = false) {
+    const roomAssignments = getEffectiveRoomAssignments(date, session, roomName);
+    const assignment = roomAssignments && roomAssignments[deskNo];
 
     const payload = {
       action: "updateAssignment",
+      tanggal: date,
+      sesi: session,
       room: roomName,
       deskNo: deskNo,
-      sesi1: roster.sesi1 || "",
-      sesi2: roster.sesi2 || "",
-      sesi3: roster.sesi3 || "",
-      idLaptop: isUnassign ? "" : (assignment.idLaptop || ""),
-      labelLaptop: isUnassign ? "" : (assignment.labelLaptop || ""),
-      pemilikLaptop: isUnassign ? "" : (assignment.pemilikLaptop || ""),
-      isReady: isUnassign ? false : Boolean(assignment.isReady),
-      hasCharger: isUnassign ? false : Boolean(assignment.hasCharger),
-      catatan: isUnassign ? "" : (assignment.catatan || "")
+      idLaptop: isUnassign ? "" : (assignment ? assignment.idLaptop : ""),
+      labelLaptop: isUnassign ? "" : (assignment ? assignment.labelLaptop : ""),
+      pemilikLaptop: isUnassign ? "" : (assignment ? assignment.pemilikLaptop : ""),
+      isReady: isUnassign ? false : Boolean(assignment ? assignment.isReady : false),
+      hasCharger: isUnassign ? false : Boolean(assignment ? assignment.hasCharger : false),
+      catatan: isUnassign ? "" : (assignment ? assignment.catatan : "")
     };
 
     offlineQueue.push(payload);
@@ -1028,16 +1464,18 @@
     flushOfflineQueue();
   }
 
-  function syncRekapRowToGAS(item) {
+  function syncRekapRowToGAS(date, item) {
     const payload = {
       action: "updateRekapRow",
+      tanggal: date,
       nis: item.nis || "",
       nama: item.nama || "",
       kelas: item.kelas || "",
-      sesi: item.sesi || 1,
       ruangKelas: item.ruangKelas || "",
       ruangLaptop: item.ruangLaptop || "",
-      noMeja: item.noMeja || "",
+      sesi1: item.sesi1 || "-",
+      sesi2: item.sesi2 || "-",
+      sesi3: item.sesi3 || "-",
       keberadaan: item.keberadaan ? true : false,
       charger: item.charger || "ADA",
       laptopStatus: item.laptop || "AMAN",
@@ -1067,20 +1505,17 @@
     try {
       while (offlineQueue.length > 0) {
         const item = offlineQueue[0];
-        
         await fetch(gasUrl, {
           method: "POST",
           headers: { "Content-Type": "text/plain;charset=utf-8" },
           body: JSON.stringify(item)
         });
-
         offlineQueue.shift();
         saveOfflineQueue();
       }
-
       updateSyncPill("synced");
     } catch (err) {
-      console.warn("GAS Sync warning (queued):", err);
+      console.warn("GAS sync error (queued):", err);
       updateSyncPill("offline");
     } finally {
       isSyncing = false;
@@ -1099,26 +1534,27 @@
   async function pollRoomStateFromGAS() {
     if (!gasUrl) return;
     try {
-      const url = `${gasUrl}?action=getRoom&room=${encodeURIComponent(activeRoom)}`;
+      const url = `${gasUrl}?action=getRoom&room=${encodeURIComponent(activeRoom)}&tanggal=${encodeURIComponent(activeDate)}&sesi=${encodeURIComponent(activeSession)}`;
       const res = await fetch(url);
       const json = await res.json();
 
       if (json && json.success && Array.isArray(json.data)) {
         let changed = false;
+        const roomAssignments = getEffectiveRoomAssignments(activeDate, activeSession, activeRoom);
+
         json.data.forEach((row) => {
           const deskNo = Number(row.NoMeja);
           if (!deskNo) return;
 
           const remoteLaptopId = String(row.IdLaptop || "").trim();
-          const localAssignment = assignments[activeRoom] && assignments[activeRoom][deskNo];
+          const local = roomAssignments[deskNo];
 
           if (remoteLaptopId) {
             const isReady = String(row.IsReady).toUpperCase() === "TRUE";
             const hasCharger = String(row.HasCharger).toUpperCase() === "TRUE";
 
-            if (!localAssignment || localAssignment.idLaptop !== remoteLaptopId) {
-              if (!assignments[activeRoom]) assignments[activeRoom] = {};
-              assignments[activeRoom][deskNo] = {
+            if (!local || local.idLaptop !== remoteLaptopId) {
+              roomAssignments[deskNo] = {
                 idLaptop: remoteLaptopId,
                 labelLaptop: row.LabelLaptop || "",
                 pemilikLaptop: row.PemilikLaptop || "",
@@ -1127,29 +1563,19 @@
                 catatan: row.Catatan || "",
                 lastUpdated: row.LastUpdated || new Date().toISOString()
               };
-
-              let pItem = laptopPool.find((l) => l.idLaptop === remoteLaptopId);
-              if (pItem) {
-                pItem.assignedRoom = activeRoom;
-                pItem.assignedDesk = deskNo;
-                pItem.isReady = isReady;
-                pItem.hasCharger = hasCharger;
-              }
               changed = true;
             }
-          } else if (localAssignment && localAssignment.idLaptop) {
-            delete assignments[activeRoom][deskNo];
+          } else if (local && local.idLaptop) {
+            delete roomAssignments[deskNo];
             changed = true;
           }
         });
 
         if (changed) {
           saveAssignments();
-          saveLaptopPool();
           renderActiveRoom();
-          renderLaptopPool();
           if (currentTab === "tabel-laptop") renderRekapLaptopTable();
-          showToast(`Data ${activeRoom} disinkronkan dari server`, "info");
+          showToast(`Pembaruan ${activeRoom} (${activeDate} ${activeSession}) tersinkron`, "info");
         }
       }
     } catch (err) {}
@@ -1183,15 +1609,16 @@
     }
   }
 
-  // --- MODALS & QUICK INSPECTION ---
+  // --- INSPECTION MODAL ---
   function openDeskInspectionModal(roomName, deskNo) {
     selectedDeskForModal = { room: roomName, desk: deskNo };
     const modal = document.getElementById("modal-desk");
-    const assignment = (assignments[roomName] && assignments[roomName][deskNo]) || null;
+    const roomAssignments = getEffectiveRoomAssignments(activeDate, activeSession, roomName);
+    const assignment = (roomAssignments && roomAssignments[deskNo]) || null;
     const roomConf = ROOMS_DATA[roomName];
     const roster = roomConf ? roomConf.roster[deskNo] || {} : {};
 
-    document.getElementById("modal-desk-room").textContent = roomName;
+    document.getElementById("modal-desk-room").textContent = `${roomName} • ${activeDate} • ${activeSession}`;
     document.getElementById("modal-desk-title").textContent = `Inspeksi Meja ${deskNo}`;
     document.getElementById("modal-student-s1").textContent = roster.sesi1 || "(Kosong)";
     document.getElementById("modal-student-s2").textContent = roster.sesi2 || "(Kosong)";
@@ -1199,7 +1626,7 @@
 
     // Populate Laptop Dropdown
     const select = document.getElementById("modal-laptop-select");
-    select.innerHTML = '<option value="">-- Pilih Laptop dari Pool --</option>';
+    select.innerHTML = '<option value="">-- Pilih Laptop dari Pool / Cadangan --</option>';
 
     laptopPool.forEach((laptop) => {
       if (!laptop.assignedRoom || (laptop.assignedRoom === roomName && laptop.assignedDesk === deskNo)) {
@@ -1211,12 +1638,26 @@
       }
     });
 
-    // Determine current student owner & cross room badge
+    // Room Backups in Dropdown
+    const backups = getEffectiveRoomBackups(activeDate, activeSession, roomName);
+    if (backups.length > 0) {
+      const optGroup = document.createElement("optgroup");
+      optGroup.label = "Laptop Cadangan Ruangan:";
+      backups.forEach((b) => {
+        const opt = document.createElement("option");
+        opt.value = b.idLaptop;
+        opt.textContent = `[CADANGAN] ${b.idLaptop} - ${b.labelLaptop}`;
+        optGroup.appendChild(opt);
+      });
+      select.appendChild(optGroup);
+    }
+
     const curLaptop = assignment ? laptopPool.find((l) => l.idLaptop === assignment.idLaptop) : null;
     const ownerName = curLaptop ? curLaptop.pemilikLaptop : (roster.sesi1 || "");
-    const rekapItem = rekapLaptops.find((r) => r.nama === ownerName);
+    const dateList = rekapLaptopsByDate[activeDate] || [];
+    const rekapItem = dateList.find((r) => r.nama === ownerName);
 
-    const rCode = roomName.replace("Ruang ", "R");
+    const rCode = roomName === "Ruang Guru" ? "Ruang Guru" : roomName.replace("Ruang ", "R");
     const ruangKelasSiswa = rekapItem ? rekapItem.ruangKelas : rCode;
     const isCross = ruangKelasSiswa !== rCode;
 
@@ -1230,11 +1671,16 @@
       crossBadge.classList.add("hidden");
     }
 
-    // Set controls
     document.getElementById("modal-charger-select").value = assignment ? (assignment.hasCharger ? "ADA" : "TIDAK ADA") : "ADA";
     document.getElementById("modal-safety-select").value = assignment ? (assignment.isReady ? "AMAN" : "TIDAK AMAN") : "AMAN";
     document.getElementById("modal-keberadaan-toggle").checked = rekapItem ? rekapItem.keberadaan : true;
     document.getElementById("modal-notes-input").value = assignment ? (assignment.catatan || "") : "";
+
+    // Quick swap button availability
+    const swapBtn = document.getElementById("btn-quick-swap-backup");
+    if (swapBtn) {
+      swapBtn.style.display = (assignment && assignment.idLaptop && backups.length > 0) ? "flex" : "none";
+    }
 
     modal.classList.remove("hidden");
     refreshIcons();
@@ -1246,21 +1692,24 @@
     selectedDeskForModal = null;
   }
 
-  // --- CSV EXPORT GENERATOR (MATCHES USER SPREADSHEET COLUMNS) ---
+  // --- CSV EXPORT (PILIHAN A: FORMAT PER TANGGAL DENGAN SESI 1, SESI 2, SESI 3) ---
   function exportMasterCSV() {
+    const curDateConf = TKA_DATES.find((d) => d.id === rekapActiveDate) || TKA_DATES[0];
     const rows = [
-      ["NIS", "NAMA", "KELAS", "SESI", "RUANG KELAS", "RUANG LAPTOP", "NO MEJA", "KEBERADAAN DI RUANGAN", "CHARGER", "LAPTOP", "KETERANGAN / ALASAN JIKA TIDAK AMAN", "LAST UPDATED"]
+      ["NIS", "NAMA", "KELAS", "RUANG KELAS", "RUANG LAPTOP", "SESI 1", "SESI 2", "SESI 3", "KEBERADAAN DI RUANGAN", "CHARGER", "LAPTOP", "KETERANGAN / ALASAN JIKA TIDAK AMAN", "LAST UPDATED"]
     ];
 
-    rekapLaptops.forEach((r) => {
+    const list = rekapLaptopsByDate[rekapActiveDate] || [];
+    list.forEach((r) => {
       rows.push([
         r.nis || "",
         r.nama || "",
         r.kelas || "",
-        r.sesi || 1,
         r.ruangKelas || "",
         r.ruangLaptop || "",
-        r.noMeja || "",
+        r.sesi1 || "-",
+        r.sesi2 || "-",
+        r.sesi3 || "-",
         r.keberadaan ? "TRUE" : "FALSE",
         r.charger || "ADA",
         r.laptop || "AMAN",
@@ -1276,14 +1725,13 @@
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    const dateStr = new Date().toISOString().slice(0, 10);
     link.setAttribute("href", url);
-    link.setAttribute("download", `Rekap_Laptop_TKA_2026_${dateStr}.csv`);
+    link.setAttribute("download", `${curDateConf.sheetName}_TKA_2026.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
 
-    showToast("File CSV Rekap Laptop berhasil diunduh!", "success");
+    showToast(`File ${curDateConf.sheetName}.csv berhasil diunduh!`, "success");
   }
 
   // --- EVENT LISTENERS ---
@@ -1294,7 +1742,7 @@
       renderActiveRoom();
     });
 
-    // Session Pills
+    // Session Selector Pills
     document.querySelectorAll(".session-btn").forEach((btn) => {
       btn.addEventListener("click", () => {
         activeSession = btn.dataset.session;
@@ -1308,7 +1756,15 @@
     document.getElementById("tab-tabel-laptop").addEventListener("click", () => switchTab("tabel-laptop"));
     document.getElementById("tab-rekap").addEventListener("click", () => switchTab("rekap"));
 
-    // Laptop Pool Search & Filter
+    // Rekap Date Tabs (Rekap_26_Okt .. Rekap_29_Okt)
+    document.querySelectorAll(".rekap-date-tab").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        rekapActiveDate = btn.dataset.date;
+        renderRekapLaptopTable();
+      });
+    });
+
+    // Search and Filters
     document.getElementById("pool-search").addEventListener("input", (e) => {
       searchQuery = e.target.value;
       renderLaptopPool();
@@ -1325,7 +1781,6 @@
       });
     });
 
-    // Rekap Table Search & Filter Listeners
     document.getElementById("rekap-filter-search").addEventListener("input", (e) => {
       rekapSearch = e.target.value;
       renderRekapLaptopTable();
@@ -1344,26 +1799,22 @@
     const toggleCrossBtn = document.getElementById("rekap-toggle-cross");
     toggleCrossBtn.addEventListener("click", () => {
       rekapOnlyCross = !rekapOnlyCross;
-      if (rekapOnlyCross) {
-        toggleCrossBtn.className = "flex-1 px-2.5 py-2 rounded-xl border border-indigo-500 bg-indigo-600 text-white font-bold transition truncate text-center shadow-xs";
-      } else {
-        toggleCrossBtn.className = "flex-1 px-2.5 py-2 rounded-xl border border-slate-200 bg-slate-50 hover:bg-indigo-50 font-bold text-slate-600 transition truncate text-center";
-      }
+      toggleCrossBtn.className = `flex-1 px-2.5 py-2 rounded-xl border font-bold transition truncate text-center ${
+        rekapOnlyCross ? "border-indigo-500 bg-indigo-600 text-white shadow-xs" : "border-slate-200 bg-slate-50 hover:bg-indigo-50 text-slate-600"
+      }`;
       renderRekapLaptopTable();
     });
 
     const toggleIssuesBtn = document.getElementById("rekap-toggle-issues");
     toggleIssuesBtn.addEventListener("click", () => {
       rekapOnlyIssues = !rekapOnlyIssues;
-      if (rekapOnlyIssues) {
-        toggleIssuesBtn.className = "flex-1 px-2.5 py-2 rounded-xl border border-rose-500 bg-rose-600 text-white font-bold transition truncate text-center shadow-xs";
-      } else {
-        toggleIssuesBtn.className = "flex-1 px-2.5 py-2 rounded-xl border border-slate-200 bg-slate-50 hover:bg-rose-50 font-bold text-slate-600 transition truncate text-center";
-      }
+      toggleIssuesBtn.className = `flex-1 px-2.5 py-2 rounded-xl border font-bold transition truncate text-center ${
+        rekapOnlyIssues ? "border-rose-500 bg-rose-600 text-white shadow-xs" : "border-slate-200 bg-slate-50 hover:bg-rose-50 text-slate-600"
+      }`;
       renderRekapLaptopTable();
     });
 
-    // Pool Dropzone to Unassign
+    // Pool Dropzone
     const poolDropzone = document.getElementById("pool-dropzone");
     poolDropzone.addEventListener("dragover", (e) => {
       e.preventDefault();
@@ -1385,7 +1836,7 @@
       } catch (err) {}
     });
 
-    // Modal Desk Inspection Events
+    // Modal Inspection Events
     document.getElementById("modal-desk-close").addEventListener("click", closeDeskInspectionModal);
     document.getElementById("modal-desk-cancel").addEventListener("click", closeDeskInspectionModal);
     
@@ -1393,6 +1844,12 @@
       if (selectedDeskForModal) {
         unassignLaptopFromDesk(selectedDeskForModal.room, selectedDeskForModal.desk);
         closeDeskInspectionModal();
+      }
+    });
+
+    document.getElementById("btn-quick-swap-backup").addEventListener("click", () => {
+      if (selectedDeskForModal) {
+        swapCurrentDeskWithRoomBackup(selectedDeskForModal.room, selectedDeskForModal.desk);
       }
     });
 
@@ -1416,14 +1873,14 @@
           catatan
         });
 
-        // Also update keberadaan flag in rekap
         const laptop = laptopPool.find((l) => l.idLaptop === chosenLaptop);
         if (laptop && laptop.pemilikLaptop) {
-          const item = rekapLaptops.find((r) => r.nama === laptop.pemilikLaptop);
+          const list = rekapLaptopsByDate[activeDate] || [];
+          const item = list.find((r) => r.nama === laptop.pemilikLaptop);
           if (item) {
             item.keberadaan = keberadaanVal;
-            saveRekapLaptops();
-            syncRekapRowToGAS(item);
+            saveRekapLaptopsByDate();
+            syncRekapRowToGAS(activeDate, item);
           }
         }
       } else {
@@ -1557,7 +2014,6 @@
     const tabTabel = document.getElementById("tab-tabel-laptop");
     const tabRekap = document.getElementById("tab-rekap");
 
-    // Hide all
     viewDenah.classList.add("hidden");
     viewTabel.classList.add("hidden");
     viewRekap.classList.add("hidden");

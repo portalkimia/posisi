@@ -1,7 +1,14 @@
 /**
- * TKA 2026 - Room Layouts & Student Rosters
+ * TKA 2026 - Room Layouts, Schedules & Student Rosters
  * Static metadata compiled directly from the official seating plans.
  */
+
+const TKA_DATES = [
+  { id: "2026-10-26", label: "26 Okt", sheetName: "Rekap_26_Okt", dayName: "Hari 1 (Senin)" },
+  { id: "2026-10-27", label: "27 Okt", sheetName: "Rekap_27_Okt", dayName: "Hari 2 (Selasa)" },
+  { id: "2026-10-28", label: "28 Okt", sheetName: "Rekap_28_Okt", dayName: "Hari 3 (Rabu)" },
+  { id: "2026-10-29", label: "29 Okt", sheetName: "Rekap_29_Okt", dayName: "Hari 4 (Kamis)" }
+];
 
 const ROOMS_DATA = {
   "Ruang 1": {
@@ -383,6 +390,16 @@ const ROOMS_DATA = {
       19: { sesi1: "Firdaus Haryo Mukti", sesi2: "", sesi3: "" },
       20: { sesi1: "Royan Multaqo", sesi2: "", sesi3: "" }
     }
+  },
+
+  "Ruang Guru": {
+    name: "Ruang Guru",
+    totalDesks: 0,
+    isBackupCenter: true,
+    description: "Posko Pusat Cadangan Laptop & Perlengkapan Sekolah",
+    sessions: ["Sesi 1", "Sesi 2", "Sesi 3"],
+    grid: [],
+    roster: {}
   }
 };
 
@@ -417,7 +434,7 @@ const KNOWN_STUDENTS_META = {
 };
 
 /**
- * Generate Rekap Laptop Siswa Master Dataset
+ * Generate Rekap Laptop Siswa Master Dataset (dengan kolom Sesi 1, Sesi 2, Sesi 3)
  */
 function generateMasterRekapList() {
   const list = [];
@@ -426,6 +443,7 @@ function generateMasterRekapList() {
   const kelasOptions = ["XII A1", "XII A2", "XII A3", "XII A4", "XII IUPP 1", "XII IUPP 2", "XII S1", "XII S2"];
 
   Object.keys(ROOMS_DATA).forEach((roomName) => {
+    if (roomName === "Ruang Guru") return;
     const rCode = roomName.replace("Ruang ", "R");
     const conf = ROOMS_DATA[roomName];
 
@@ -433,22 +451,29 @@ function generateMasterRekapList() {
       const roster = conf.roster[deskNo];
       if (!roster) continue;
 
+      // Unique student names across sessions for this desk
+      const studentMap = {};
       ["sesi1", "sesi2", "sesi3"].forEach((sKey, sIdx) => {
         const studentName = roster[sKey];
         if (!studentName || !studentName.trim()) return;
+        studentMap[studentName] = sIdx + 1;
+      });
 
-        const sesiNum = sIdx + 1;
+      Object.keys(studentMap).forEach((studentName) => {
+        const primarySession = studentMap[studentName];
         const known = KNOWN_STUDENTS_META[studentName];
+        const deskText = "Meja " + deskNo;
 
         if (known) {
           list.push({
             nis: known.nis,
             nama: studentName,
             kelas: known.kelas,
-            sesi: sesiNum,
             ruangKelas: known.ruangKelas,
             ruangLaptop: known.ruangLaptop,
-            noMeja: deskNo,
+            sesi1: primarySession === 1 ? deskText : "-",
+            sesi2: primarySession <= 2 ? deskText : "-",
+            sesi3: deskText,
             keberadaan: known.keberadaan,
             charger: known.charger,
             laptop: known.laptop,
@@ -456,15 +481,16 @@ function generateMasterRekapList() {
           });
         } else {
           nisCounter++;
-          const defaultKelas = kelasOptions[(deskNo + sesiNum) % kelasOptions.length];
+          const defaultKelas = kelasOptions[(deskNo + primarySession) % kelasOptions.length];
           list.push({
             nis: String(nisCounter),
             nama: studentName,
             kelas: defaultKelas,
-            sesi: sesiNum,
             ruangKelas: rCode,
-            ruangLaptop: rCode, // Default sama dengan ruang kelas kecuali dipindahkan
-            noMeja: deskNo,
+            ruangLaptop: rCode,
+            sesi1: primarySession === 1 ? deskText : "-",
+            sesi2: primarySession <= 2 ? deskText : "-",
+            sesi3: deskText,
             keberadaan: true,
             charger: "ADA",
             laptop: "AMAN",
@@ -478,7 +504,59 @@ function generateMasterRekapList() {
   return list;
 }
 
+/**
+ * Generate Default Spare / Backup Laptops for Each Room & Ruang Guru
+ */
+function generateDefaultRoomBackups() {
+  const backups = {};
+
+  // For Ruang 1 s/d Ruang 11
+  for (let r = 1; r <= 11; r++) {
+    const rName = "Ruang " + r;
+    const rCode = "R" + r;
+    backups[rName] = [
+      {
+        idLaptop: `CAD-${rCode}-01`,
+        labelLaptop: `Cadangan ${rName} (Core i5 8GB)`,
+        pemilikLaptop: `Unit Cadangan ${rName}`,
+        isReady: true,
+        hasCharger: true,
+        catatan: "Siap pakai di ruangan",
+        isBackup: true,
+        room: rName
+      },
+      {
+        idLaptop: `CAD-${rCode}-02`,
+        labelLaptop: `Cadangan ${rName} (Ryzen 5 8GB)`,
+        pemilikLaptop: `Unit Cadangan ${rName}`,
+        isReady: true,
+        hasCharger: true,
+        catatan: "Siap pakai di ruangan",
+        isBackup: true,
+        room: rName
+      }
+    ];
+  }
+
+  // For Ruang Guru (Pusat Cadangan Sekolah)
+  backups["Ruang Guru"] = [];
+  for (let g = 1; g <= 8; g++) {
+    backups["Ruang Guru"].push({
+      idLaptop: `CAD-GURU-${String(g).padStart(2, "0")}`,
+      labelLaptop: `Laptop Cadangan Pusat Posko (ThinkPad L14)`,
+      pemilikLaptop: `Pusat Cadangan Ruang Guru`,
+      isReady: true,
+      hasCharger: true,
+      catatan: "Stok cadangan pusat sekolah",
+      isBackup: true,
+      room: "Ruang Guru"
+    });
+  }
+
+  return backups;
+}
+
 // Export for Node/CommonJS (if testing) or window for browser SPA
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { ROOMS_DATA, KNOWN_STUDENTS_META, generateMasterRekapList };
+  module.exports = { ROOMS_DATA, KNOWN_STUDENTS_META, TKA_DATES, generateMasterRekapList, generateDefaultRoomBackups };
 }

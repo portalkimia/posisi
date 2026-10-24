@@ -1,29 +1,37 @@
 /**
  * TKA 2026 - Central Laptop Assignment & Room Layout Synchronization
- * Google Apps Script Web App Backend
+ * Multi-Day (26–29 Okt) & Multi-Session Backend
  * 
  * Target Sheets:
- * 1. Rekap_Laptop:
- *    [NIS, NAMA, KELAS, SESI, RUANG_KELAS, RUANG_LAPTOP, NO_MEJA, KEBERADAAN, CHARGER, STATUS_LAPTOP, KETERANGAN, LAST_UPDATED]
- * 2. Data_Ruangan:
- *    [Ruang, NoMeja, Sesi1, Sesi2, Sesi3, IdLaptop, LabelLaptop, PemilikLaptop, IsReady, HasCharger, Catatan, LastUpdated]
- * 3. Laptops_Inventory:
- *    [IdLaptop, LabelLaptop, PemilikLaptop, IsReady, HasCharger, AssignedRoom, AssignedDesk, Catatan, LastUpdated]
+ * - Rekap_26_Okt
+ * - Rekap_27_Okt
+ * - Rekap_28_Okt
+ * - Rekap_29_Okt
+ * Columns: [NIS, NAMA, KELAS, RUANG KELAS, RUANG LAPTOP, SESI 1, SESI 2, SESI 3, KEBERADAAN DI RUANGAN, CHARGER, LAPTOP, KETERANGAN, LAST UPDATED]
+ * 
+ * - Data_Ruangan (Desk assignments per date & session)
+ * - Laptops_Inventory (Central inventory)
  */
 
-const SHEET_REKAP = "Rekap_Laptop";
+const DATES_CONFIG = {
+  "2026-10-26": "Rekap_26_Okt",
+  "2026-10-27": "Rekap_27_Okt",
+  "2026-10-28": "Rekap_28_Okt",
+  "2026-10-29": "Rekap_29_Okt"
+};
+
 const SHEET_ROOMS = "Data_Ruangan";
 const SHEET_LAPTOPS = "Laptops_Inventory";
 
 const HEADERS_REKAP = [
-  "NIS", "NAMA", "KELAS", "SESI", 
-  "RUANG KELAS", "RUANG LAPTOP", "NO MEJA", 
+  "NIS", "NAMA", "KELAS", "RUANG KELAS", "RUANG LAPTOP", 
+  "SESI 1", "SESI 2", "SESI 3", 
   "KEBERADAAN DI RUANGAN", "CHARGER", "LAPTOP", 
   "KETERANGAN", "LAST UPDATED"
 ];
 
 const HEADERS_ROOMS = [
-  "Ruang", "NoMeja", "Sesi1", "Sesi2", "Sesi3", 
+  "Tanggal", "Sesi", "Ruang", "NoMeja", "NamaPeserta", 
   "IdLaptop", "LabelLaptop", "PemilikLaptop", 
   "IsReady", "HasCharger", "Catatan", "LastUpdated"
 ];
@@ -37,9 +45,9 @@ const HEADERS_LAPTOPS = [
 /**
  * Handle HTTP GET Requests
  * Endpoints:
- * - ?action=getRekapLaptop
- * - ?action=getRoom&room=Ruang%201
- * - ?action=getAllSummary
+ * - ?action=getRekapLaptop&tanggal=2026-10-26
+ * - ?action=getAllRekap (all 4 days)
+ * - ?action=getRoom&room=Ruang%201&tanggal=2026-10-26&sesi=Sesi%201
  * - ?action=getInventory
  * - ?action=ping
  */
@@ -54,21 +62,33 @@ function doGet(e) {
     if (action === "ping") {
       result = { success: true, message: "PONG", timestamp: new Date().toISOString() };
     } else if (action === "getRekapLaptop") {
-      const sheet = ss.getSheetByName(SHEET_REKAP);
+      const tanggal = (e && e.parameter && e.parameter.tanggal) || "2026-10-26";
+      const sheetName = DATES_CONFIG[tanggal] || "Rekap_26_Okt";
+      const sheet = ss.getSheetByName(sheetName);
       const data = getSheetDataAsObjects(sheet);
-      result = { success: true, data: data, count: data.length };
+      result = { success: true, tanggal: tanggal, sheetName: sheetName, data: data, count: data.length };
+    } else if (action === "getAllRekap") {
+      const allData = {};
+      Object.keys(DATES_CONFIG).forEach(function (tgl) {
+        const sName = DATES_CONFIG[tgl];
+        const s = ss.getSheetByName(sName);
+        allData[tgl] = s ? getSheetDataAsObjects(s) : [];
+      });
+      result = { success: true, data: allData };
     } else if (action === "getRoom") {
       const room = e.parameter.room || "Ruang 1";
+      const tanggal = e.parameter.tanggal || "2026-10-26";
+      const sesi = e.parameter.sesi || "Sesi 1";
+
       const sheet = ss.getSheetByName(SHEET_ROOMS);
       const data = getSheetDataAsObjects(sheet);
       const roomData = data.filter(function (row) {
-        return String(row.Ruang).trim().toLowerCase() === String(room).trim().toLowerCase();
+        const matchRoom = String(row.Ruang).trim().toLowerCase() === String(room).trim().toLowerCase();
+        const matchTgl = !row.Tanggal || String(row.Tanggal).trim() === String(tanggal).trim();
+        const matchSesi = !row.Sesi || String(row.Sesi).trim().toLowerCase() === String(sesi).trim().toLowerCase();
+        return matchRoom && matchTgl && matchSesi;
       });
-      result = { success: true, room: room, data: roomData, count: roomData.length };
-    } else if (action === "getAllSummary") {
-      const sheet = ss.getSheetByName(SHEET_ROOMS);
-      const data = getSheetDataAsObjects(sheet);
-      result = { success: true, data: data, count: data.length };
+      result = { success: true, room: room, tanggal: tanggal, sesi: sesi, data: roomData, count: roomData.length };
     } else if (action === "getInventory") {
       const sheet = ss.getSheetByName(SHEET_LAPTOPS);
       const data = getSheetDataAsObjects(sheet);
@@ -90,14 +110,13 @@ function doGet(e) {
 /**
  * Handle HTTP POST Requests
  * Endpoints:
- * - action: "updateRekapRow" (Update student laptop status in Rekap_Laptop)
- * - action: "batchSyncRekap" (Update multiple student laptop records)
- * - action: "updateAssignment" (Upsert desk assignment & cross-sync to Rekap_Laptop)
+ * - action: "updateRekapRow" (Update student row in specific date sheet)
+ * - action: "batchSyncDate" (Bulk update for a specific date)
+ * - action: "updateAssignment" (Upsert desk assignment and sync to session column)
  */
 function doPost(e) {
   const lock = LockService.getScriptLock();
   try {
-    // Wait up to 15 seconds to acquire lock, avoiding write collision
     lock.waitLock(15000);
 
     let body = {};
@@ -115,8 +134,8 @@ function doPost(e) {
 
     if (action === "updateRekapRow") {
       response = handleUpdateRekapRow(ss, body);
-    } else if (action === "batchSyncRekap") {
-      response = handleBatchSyncRekap(ss, body.items || []);
+    } else if (action === "batchSyncDate") {
+      response = handleBatchSyncDate(ss, body.tanggal, body.items || []);
     } else if (action === "updateAssignment") {
       response = handleUpdateAssignment(ss, body);
     } else if (action === "upsertLaptop") {
@@ -140,19 +159,22 @@ function doPost(e) {
 }
 
 /**
- * Update single student row in Rekap_Laptop
+ * Update single student row in the specific Date Sheet
  */
 function handleUpdateRekapRow(ss, payload) {
-  const sheetRekap = ss.getSheetByName(SHEET_REKAP);
+  const tanggal = String(payload.tanggal || "2026-10-26").trim();
+  const sheetName = DATES_CONFIG[tanggal] || "Rekap_26_Okt";
+  const sheet = ss.getSheetByName(sheetName);
   const now = new Date().toISOString();
 
   const nis = String(payload.nis || "").trim();
   const nama = String(payload.nama || "").trim();
   const kelas = String(payload.kelas || "").trim();
-  const sesi = String(payload.sesi || "").trim();
   const ruangKelas = String(payload.ruangKelas || "").trim();
   const ruangLaptop = String(payload.ruangLaptop || "").trim();
-  const noMeja = payload.noMeja ? Number(payload.noMeja) : "";
+  const sesi1 = payload.sesi1 !== undefined ? String(payload.sesi1) : "";
+  const sesi2 = payload.sesi2 !== undefined ? String(payload.sesi2) : "";
+  const sesi3 = payload.sesi3 !== undefined ? String(payload.sesi3) : "";
   const keberadaan = payload.keberadaan === true || payload.keberadaan === "true" || payload.keberadaan === 1 || payload.keberadaan === "TRUE";
   const charger = String(payload.charger || "ADA").toUpperCase();
   const laptopStatus = String(payload.laptopStatus || payload.laptop || "AMAN").toUpperCase();
@@ -162,7 +184,7 @@ function handleUpdateRekapRow(ss, payload) {
     return { success: false, error: "Missing required identifier: NIS or Nama" };
   }
 
-  const values = sheetRekap.getDataRange().getValues();
+  const values = sheet.getDataRange().getValues();
   let targetRow = -1;
 
   for (let i = 1; i < values.length; i++) {
@@ -178,10 +200,11 @@ function handleUpdateRekapRow(ss, payload) {
     nis || (targetRow > 0 ? values[targetRow - 1][0] : ""),
     nama || (targetRow > 0 ? values[targetRow - 1][1] : ""),
     kelas || (targetRow > 0 ? values[targetRow - 1][2] : ""),
-    sesi || (targetRow > 0 ? values[targetRow - 1][3] : ""),
-    ruangKelas || (targetRow > 0 ? values[targetRow - 1][4] : ""),
-    ruangLaptop || (targetRow > 0 ? values[targetRow - 1][5] : ""),
-    noMeja || (targetRow > 0 ? values[targetRow - 1][6] : ""),
+    ruangKelas || (targetRow > 0 ? values[targetRow - 1][3] : ""),
+    ruangLaptop || (targetRow > 0 ? values[targetRow - 1][4] : ""),
+    sesi1 || (targetRow > 0 ? values[targetRow - 1][5] : ""),
+    sesi2 || (targetRow > 0 ? values[targetRow - 1][6] : ""),
+    sesi3 || (targetRow > 0 ? values[targetRow - 1][7] : ""),
     keberadaan ? true : false,
     charger.indexOf("TIDAK") !== -1 ? "TIDAK ADA" : "ADA",
     laptopStatus.indexOf("TIDAK") !== -1 ? "TIDAK AMAN" : "AMAN",
@@ -190,80 +213,79 @@ function handleUpdateRekapRow(ss, payload) {
   ];
 
   if (targetRow > 0) {
-    sheetRekap.getRange(targetRow, 1, 1, HEADERS_REKAP.length).setValues([rowData]);
+    sheet.getRange(targetRow, 1, 1, HEADERS_REKAP.length).setValues([rowData]);
   } else {
-    sheetRekap.appendRow(rowData);
-    targetRow = sheetRekap.getLastRow();
+    sheet.appendRow(rowData);
+    targetRow = sheet.getLastRow();
   }
 
-  // Ensure checkbox formatting
-  sheetRekap.getRange(targetRow, 8).insertCheckboxes();
+  sheet.getRange(targetRow, 9).insertCheckboxes();
 
   return {
     success: true,
     action: targetRow > 0 ? "updated" : "inserted",
-    nis: nis,
+    tanggal: tanggal,
     nama: nama,
-    ruangLaptop: ruangLaptop,
     lastUpdated: now
   };
 }
 
 /**
- * Handle batch updates to Rekap_Laptop
+ * Bulk update date sheet
  */
-function handleBatchSyncRekap(ss, items) {
+function handleBatchSyncDate(ss, tanggal, items) {
   let count = 0;
   for (let i = 0; i < items.length; i++) {
-    handleUpdateRekapRow(ss, items[i]);
+    const item = items[i];
+    item.tanggal = tanggal;
+    handleUpdateRekapRow(ss, item);
     count++;
   }
   return { success: true, count: count };
 }
 
 /**
- * Upsert a single desk assignment (Data_Ruangan) and cross-sync to Rekap_Laptop
+ * Upsert desk assignment into Data_Ruangan & cross-sync to date sheet Sesi column
  */
 function handleUpdateAssignment(ss, payload) {
   const sheetRooms = ss.getSheetByName(SHEET_ROOMS);
   const sheetLaptops = ss.getSheetByName(SHEET_LAPTOPS);
   const now = new Date().toISOString();
 
+  const tanggal = String(payload.tanggal || "2026-10-26").trim();
+  const sesi = String(payload.sesi || "Sesi 1").trim();
   const room = String(payload.room || "").trim();
-  const deskNo = Number(payload.deskNo);
+  const deskNo = payload.deskNo !== undefined ? Number(payload.deskNo) : 0;
+  const namaPeserta = String(payload.namaPeserta || "").trim();
   const idLaptop = String(payload.idLaptop || "").trim();
   const labelLaptop = String(payload.labelLaptop || "").trim();
   const pemilikLaptop = String(payload.pemilikLaptop || "").trim();
   const isReady = payload.isReady === true || payload.isReady === "true" || payload.isReady === 1;
   const hasCharger = payload.hasCharger === true || payload.hasCharger === "true" || payload.hasCharger === 1;
   const catatan = String(payload.catatan || payload.keterangan || "").trim();
-  const sesi1 = String(payload.sesi1 || "").trim();
-  const sesi2 = String(payload.sesi2 || "").trim();
-  const sesi3 = String(payload.sesi3 || "").trim();
 
-  if (!room || !deskNo) {
-    return { success: false, error: "Missing required fields: room and deskNo" };
-  }
-
-  // 1. Search existing row in Data_Ruangan
+  // 1. Update Data_Ruangan
   const values = sheetRooms.getDataRange().getValues();
   let targetRow = -1;
 
   for (let i = 1; i < values.length; i++) {
-    const r = String(values[i][0]).trim();
-    const d = Number(values[i][1]);
-    if (r.toLowerCase() === room.toLowerCase() && d === deskNo) {
+    const rTgl = String(values[i][0]).trim();
+    const rSesi = String(values[i][1]).trim();
+    const rRuang = String(values[i][2]).trim();
+    const rDesk = Number(values[i][3]);
+
+    if (rTgl === tanggal && rSesi.toLowerCase() === sesi.toLowerCase() && rRuang.toLowerCase() === room.toLowerCase() && rDesk === deskNo) {
       targetRow = i + 1;
       break;
     }
   }
 
   const rowData = [
+    tanggal,
+    sesi,
     room,
     deskNo,
-    sesi1,
-    sesi2,
-    sesi3,
+    namaPeserta,
     idLaptop,
     labelLaptop,
     pemilikLaptop,
@@ -274,25 +296,31 @@ function handleUpdateAssignment(ss, payload) {
   ];
 
   if (targetRow > 0) {
-    if (!sesi1 && values[targetRow - 1][2]) rowData[2] = values[targetRow - 1][2];
-    if (!sesi2 && values[targetRow - 1][3]) rowData[3] = values[targetRow - 1][3];
-    if (!sesi3 && values[targetRow - 1][4]) rowData[4] = values[targetRow - 1][4];
     sheetRooms.getRange(targetRow, 1, 1, HEADERS_ROOMS.length).setValues([rowData]);
   } else {
     sheetRooms.appendRow(rowData);
   }
 
-  // 2. Cross-sync to Rekap_Laptop if student owner is identified
+  // 2. Cross-sync to the date's Rekap sheet under the specific Sesi column
   if (pemilikLaptop) {
-    handleUpdateRekapRow(ss, {
+    const rCode = room.replace("Ruang ", "R");
+    const deskText = deskNo ? "Meja " + deskNo : "Cadangan";
+    
+    const rekapUpdate = {
+      tanggal: tanggal,
       nama: pemilikLaptop,
-      ruangLaptop: room.replace("Ruang ", "R"),
-      noMeja: deskNo,
+      ruangLaptop: rCode,
       keberadaan: true,
       charger: hasCharger ? "ADA" : "TIDAK ADA",
       laptopStatus: isReady ? "AMAN" : "TIDAK AMAN",
       keterangan: catatan
-    });
+    };
+
+    if (sesi === "Sesi 1") rekapUpdate.sesi1 = deskText;
+    else if (sesi === "Sesi 2") rekapUpdate.sesi2 = deskText;
+    else if (sesi === "Sesi 3") rekapUpdate.sesi3 = deskText;
+
+    handleUpdateRekapRow(ss, rekapUpdate);
   }
 
   // 3. Sync to Laptops_Inventory
@@ -313,16 +341,14 @@ function handleUpdateAssignment(ss, payload) {
   return {
     success: true,
     action: targetRow > 0 ? "updated" : "inserted",
+    tanggal: tanggal,
+    sesi: sesi,
     room: room,
     deskNo: deskNo,
-    idLaptop: idLaptop,
-    lastUpdated: now
+    idLaptop: idLaptop
   };
 }
 
-/**
- * Sync laptop record in Laptops_Inventory
- */
 function syncLaptopInventory(sheet, laptop) {
   const values = sheet.getDataRange().getValues();
   let targetRow = -1;
@@ -360,21 +386,24 @@ function handleUpsertLaptop(ss, payload) {
 }
 
 /**
- * Ensure sheets exist with correct headers, dropdown validations & conditional styling
+ * Ensure sheets exist for all 4 dates with correct headers, dropdown validations & conditional styling
  */
 function ensureSetup(ss) {
-  // 1. Rekap_Laptop
-  let sRekap = ss.getSheetByName(SHEET_REKAP);
-  if (!sRekap) {
-    sRekap = ss.insertSheet(SHEET_REKAP, 0); // Put in 1st tab
-    sRekap.appendRow(HEADERS_REKAP);
-    sRekap.getRange(1, 1, 1, HEADERS_REKAP.length)
-      .setFontWeight("bold")
-      .setBackground("#1e293b")
-      .setFontColor("#ffffff");
-    sRekap.setFrozenRows(1);
-    setupRekapValidations(sRekap);
-  }
+  // 1. Create Sheets for all 4 dates: Rekap_26_Okt .. Rekap_29_Okt
+  Object.keys(DATES_CONFIG).forEach(function (tgl, idx) {
+    const sName = DATES_CONFIG[tgl];
+    let sheet = ss.getSheetByName(sName);
+    if (!sheet) {
+      sheet = ss.insertSheet(sName, idx);
+      sheet.appendRow(HEADERS_REKAP);
+      sheet.getRange(1, 1, 1, HEADERS_REKAP.length)
+        .setFontWeight("bold")
+        .setBackground("#0f172a")
+        .setFontColor("#ffffff");
+      sheet.setFrozenRows(1);
+      setupRekapValidations(sheet);
+    }
+  });
 
   // 2. Data_Ruangan
   let sRooms = ss.getSheetByName(SHEET_ROOMS);
@@ -400,60 +429,58 @@ function ensureSetup(ss) {
 }
 
 /**
- * Set dropdowns & conditional formatting for Rekap_Laptop
+ * Set dropdowns & conditional formatting for Rekap sheets
  */
 function setupRekapValidations(sheet) {
   const maxRows = 400;
 
-  // Dropdown for CHARGER (Col 9: ADA, TIDAK ADA)
+  // Dropdown for CHARGER (Col 10: ADA, TIDAK ADA)
   const chargerRule = SpreadsheetApp.newDataValidation()
     .requireValueInList(["ADA", "TIDAK ADA"], true)
     .setAllowInvalid(false)
     .build();
-  sheet.getRange(2, 9, maxRows, 1).setDataValidation(chargerRule);
+  sheet.getRange(2, 10, maxRows, 1).setDataValidation(chargerRule);
 
-  // Dropdown for LAPTOP (Col 10: AMAN, TIDAK AMAN)
+  // Dropdown for LAPTOP (Col 11: AMAN, TIDAK AMAN)
   const laptopRule = SpreadsheetApp.newDataValidation()
     .requireValueInList(["AMAN", "TIDAK AMAN"], true)
     .setAllowInvalid(false)
     .build();
-  sheet.getRange(2, 10, maxRows, 1).setDataValidation(laptopRule);
+  sheet.getRange(2, 11, maxRows, 1).setDataValidation(laptopRule);
 
-  // Dropdown for RUANG KELAS & RUANG LAPTOP (Cols 5 & 6: R1 .. R11)
-  const roomsList = ["R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8", "R9", "R10", "R11"];
+  // Dropdown for RUANG KELAS & RUANG LAPTOP (Cols 4 & 5: R1 .. R11, Ruang Guru)
+  const roomsList = ["R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8", "R9", "R10", "R11", "Ruang Guru"];
   const roomRule = SpreadsheetApp.newDataValidation()
     .requireValueInList(roomsList, true)
     .setAllowInvalid(true)
     .build();
-  sheet.getRange(2, 5, maxRows, 2).setDataValidation(roomRule);
+  sheet.getRange(2, 4, maxRows, 2).setDataValidation(roomRule);
 
-  // Checkbox for KEBERADAAN DI RUANGAN (Col 8)
-  sheet.getRange(2, 8, maxRows, 1).insertCheckboxes();
+  // Checkbox for KEBERADAAN DI RUANGAN (Col 9)
+  sheet.getRange(2, 9, maxRows, 1).insertCheckboxes();
 
-  // Conditional formatting: Highlight "TIDAK ADA" charger in red
+  // Conditional formatting: Red highlight for TIDAK ADA charger
   const rules = sheet.getConditionalFormatRules() || [];
   const ruleNoCharger = SpreadsheetApp.newConditionalFormatRule()
     .whenTextEqualTo("TIDAK ADA")
     .setBackground("#fecaca")
     .setFontColor("#991b1b")
-    .setRanges([sheet.getRange(2, 9, maxRows, 1)])
+    .setRanges([sheet.getRange(2, 10, maxRows, 1)])
     .build();
 
   const ruleNotSafe = SpreadsheetApp.newConditionalFormatRule()
     .whenTextEqualTo("TIDAK AMAN")
     .setBackground("#fed7aa")
     .setFontColor("#9a3412")
-    .setRanges([sheet.getRange(2, 10, maxRows, 1)])
+    .setRanges([sheet.getRange(2, 11, maxRows, 1)])
     .build();
 
   rules.push(ruleNoCharger, ruleNotSafe);
   sheet.setConditionalFormatRules(rules);
 }
 
-/**
- * Helper to convert sheet rows to JSON array of objects
- */
 function getSheetDataAsObjects(sheet) {
+  if (!sheet) return [];
   const values = sheet.getDataRange().getValues();
   if (values.length <= 1) return [];
 
@@ -471,9 +498,6 @@ function getSheetDataAsObjects(sheet) {
   return list;
 }
 
-/**
- * Manual setup entry point for Google Apps Script Editor
- */
 function setupSheets() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   ensureSetup(ss);
