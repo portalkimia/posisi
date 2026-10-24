@@ -181,9 +181,13 @@
             <span id="current-session-label" class="font-semibold text-slate-700">Sesi 1</span>
           </div>
           <div class="flex items-center gap-2">
-            <button id="btn-auto-plot" class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-sm shadow-indigo-100 transition" title="Plot otomatis semua meja di ruangan ini sesuai jadwal siswa yang laptopnya tersedia">
+            <button id="btn-auto-plot" class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-sm shadow-indigo-100 transition" title="Plot otomatis meja sesuai jadwal pemilik, atau pinjam laptop sesi berikutnya jika kosong">
               <i data-lucide="wand-2" class="w-3.5 h-3.5"></i>
-              <span>Plot Otomatis Meja</span>
+              <span>Plot Otomatis</span>
+            </button>
+            <button id="btn-clear-room-desks" class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs shadow-2xs transition" title="Kosongkan semua meja di ruangan ini dan kembalikan laptop menjadi cadangan">
+              <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+              <span>Kosongkan Meja</span>
             </button>
             <span class="text-slate-400 italic hidden md:inline">Tarik laptop dari dock cadangan ke meja</span>
           </div>
