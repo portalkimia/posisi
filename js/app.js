@@ -625,16 +625,17 @@
       const laptopDetails = document.createElement("div");
       laptopDetails.className = "flex flex-col truncate";
 
+      const laptopOwner = document.createElement("span");
+      laptopOwner.className = "text-xs font-black text-slate-900 truncate";
+      laptopOwner.textContent = assignment.pemilikLaptop || assignment.labelLaptop || "-";
+      laptopOwner.title = assignment.pemilikLaptop || "";
+
       const laptopId = document.createElement("span");
-      laptopId.className = "text-xs font-black text-indigo-700 truncate";
+      laptopId.className = "text-[10px] font-semibold text-indigo-600 truncate";
       laptopId.textContent = assignment.idLaptop;
 
-      const laptopOwner = document.createElement("span");
-      laptopOwner.className = "text-[10px] text-slate-600 truncate";
-      laptopOwner.textContent = assignment.pemilikLaptop || assignment.labelLaptop || "-";
-
-      laptopDetails.appendChild(laptopId);
       laptopDetails.appendChild(laptopOwner);
+      laptopDetails.appendChild(laptopId);
       laptopRow.appendChild(laptopDetails);
 
       const unassignBtn = document.createElement("button");
@@ -768,8 +769,7 @@
       card.innerHTML = `
         <div class="flex items-center justify-between gap-1.5">
           <div class="flex items-center gap-1.5 truncate">
-            <span class="px-2 py-0.5 rounded-md font-bold text-xs bg-amber-200 text-amber-900">${b.idLaptop}</span>
-            ${b.isCrossRoom ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">Asal ${b.ruangKelas}</span>` : ""}
+            <span class="text-xs font-black text-slate-900 truncate" title="${b.pemilikLaptop}">${b.pemilikLaptop}</span>
           </div>
           <div class="flex items-center gap-1.5 flex-shrink-0">
             <span class="w-2.5 h-2.5 rounded-full ${b.isReady ? "bg-emerald-500" : "bg-rose-500"}" title="${b.isReady ? "Aman" : "Tidak Aman"}"></span>
@@ -777,10 +777,10 @@
           </div>
         </div>
 
-        <div class="flex flex-col">
-          <span class="text-xs font-bold text-slate-900 truncate" title="${b.pemilikLaptop}">${b.pemilikLaptop}</span>
-          <span class="text-[10px] text-slate-500 truncate">${b.labelLaptop}</span>
-          ${b.catatan ? `<span class="text-[10px] text-amber-800 mt-0.5 truncate">📝 ${b.catatan}</span>` : ""}
+        <div class="flex items-center gap-1.5 text-[10px] text-slate-500 truncate">
+          <span class="font-mono font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.2 rounded">${b.idLaptop}</span>
+          ${b.isCrossRoom ? `<span class="px-1.5 py-0.2 rounded font-bold bg-amber-100 text-amber-900 border border-amber-300">Asal ${b.ruangKelas}</span>` : `<span class="truncate">${b.labelLaptop}</span>`}
+          ${b.catatan ? `<span class="text-amber-800 truncate">📝 ${b.catatan}</span>` : ""}
         </div>
 
         <div class="pt-2 border-t border-amber-200/60 flex items-center justify-between text-[11px] gap-2">
@@ -1244,19 +1244,20 @@
       const top = document.createElement("div");
       top.className = "flex items-center gap-1.5";
 
-      const idSpan = document.createElement("span");
-      idSpan.className = "text-xs font-bold text-slate-900";
-      idSpan.textContent = laptop.idLaptop;
-      top.appendChild(idSpan);
+      const nameSpan = document.createElement("span");
+      nameSpan.className = "text-xs font-black text-slate-900 truncate";
+      nameSpan.textContent = laptop.pemilikLaptop || laptop.labelLaptop || "Laptop Mandiri";
+      nameSpan.title = laptop.pemilikLaptop || "";
+      top.appendChild(nameSpan);
 
       const readySpan = document.createElement("span");
-      readySpan.className = `w-2 h-2 rounded-full ${laptop.isReady ? "bg-emerald-500" : "bg-rose-500"}`;
+      readySpan.className = `w-2 h-2 rounded-full ${laptop.isReady ? "bg-emerald-500" : "bg-rose-500"} flex-shrink-0`;
       readySpan.title = laptop.isReady ? "Aman" : "Tidak Aman";
       top.appendChild(readySpan);
 
       if (laptop.hasCharger) {
         const chgSpan = document.createElement("span");
-        chgSpan.className = "text-[10px] text-amber-500 font-bold";
+        chgSpan.className = "text-[10px] text-amber-500 font-bold flex-shrink-0";
         chgSpan.textContent = "⚡";
         chgSpan.title = "Ada Charger";
         top.appendChild(chgSpan);
@@ -1264,17 +1265,21 @@
 
       if (isAssigned) {
         const assignedBadge = document.createElement("span");
-        assignedBadge.className = "text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-800 border border-indigo-200";
+        assignedBadge.className = "text-[10px] font-bold px-1.5 py-0.2 rounded bg-indigo-100 text-indigo-800 border border-indigo-200 flex-shrink-0";
         assignedBadge.textContent = `${laptop.assignedRoom} M.${laptop.assignedDesk}`;
         top.appendChild(assignedBadge);
       }
 
       left.appendChild(top);
 
-      const labelSpan = document.createElement("span");
-      labelSpan.className = "text-[11px] text-slate-600 truncate";
-      labelSpan.textContent = laptop.pemilikLaptop || laptop.labelLaptop || "Laptop Mandiri";
-      left.appendChild(labelSpan);
+      const subSpan = document.createElement("div");
+      subSpan.className = "flex items-center gap-1.5 text-[10px] text-slate-500 mt-0.5 truncate";
+      subSpan.innerHTML = `
+        <span class="font-mono font-bold text-indigo-700 bg-indigo-50 px-1 rounded">${laptop.idLaptop}</span>
+        <span class="truncate">${laptop.labelLaptop || ""}</span>
+        ${laptop.keberadaan === false ? '<span class="px-1 rounded bg-rose-100 text-rose-800 font-bold">Belum Kumpul</span>' : ''}
+      `;
+      left.appendChild(subSpan);
 
       item.appendChild(left);
 
@@ -2243,7 +2248,7 @@
       if (!laptop.assignedRoom || (laptop.assignedRoom === roomName && laptop.assignedDesk === deskNo)) {
         const opt = document.createElement("option");
         opt.value = laptop.idLaptop;
-        opt.textContent = `${laptop.idLaptop} - ${laptop.pemilikLaptop || laptop.labelLaptop} (${laptop.isReady ? "AMAN" : "TIDAK AMAN"})`;
+        opt.textContent = `${laptop.pemilikLaptop || laptop.labelLaptop} [${laptop.idLaptop}] (${laptop.isReady ? "AMAN" : "TIDAK AMAN"})`;
         if (assignment && assignment.idLaptop === laptop.idLaptop) opt.selected = true;
         select.appendChild(opt);
       }
@@ -2612,6 +2617,13 @@
     if (btnAutoPlot) {
       btnAutoPlot.addEventListener("click", () => {
         autoPlotRoomDesks(activeRoom);
+      });
+    }
+
+    const btnClearDesks = document.getElementById("btn-clear-room-desks");
+    if (btnClearDesks) {
+      btnClearDesks.addEventListener("click", () => {
+        clearAllDesksInRoom(activeRoom);
       });
     }
     document.getElementById("btn-rekap-export").addEventListener("click", exportMasterCSV);
