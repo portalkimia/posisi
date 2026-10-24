@@ -65,6 +65,7 @@
     if (currentTab === "tabel-laptop") renderRekapLaptopTable();
     updateSyncPill();
     startAutoPolling();
+    pollRoomStateFromGAS();
     refreshIcons();
   });
 
@@ -105,7 +106,7 @@
     // 4. Load Laptop Pool
     try {
       const storedPool = localStorage.getItem(STORAGE_KEY_POOL);
-      if (storedPool && JSON.parse(storedPool).length > 0) {
+      if (storedPool && JSON.parse(storedPool).length >= 100) {
         laptopPool = JSON.parse(storedPool);
       } else {
         laptopPool = generateDefaultLaptopPool();
@@ -115,6 +116,7 @@
       laptopPool = generateDefaultLaptopPool();
       saveLaptopPool();
     }
+    syncLaptopPoolFromRekap();
 
     // 5. Load Offline Queue
     try {
@@ -151,25 +153,42 @@
     localStorage.setItem(STORAGE_KEY_QUEUE, JSON.stringify(offlineQueue));
   }
 
-  function generateDefaultLaptopPool() {
+  function buildLaptopPoolFromRekap() {
     const list = [];
-    if (typeof KNOWN_STUDENTS_META !== "undefined") {
-      let idx = 1;
-      Object.keys(KNOWN_STUDENTS_META).forEach((nama) => {
-        const meta = KNOWN_STUDENTS_META[nama];
-        list.push({
-          idLaptop: `LP-${String(idx).padStart(3, "0")}`,
-          labelLaptop: `Laptop Mandiri (${meta.kelas})`,
-          pemilikLaptop: nama,
-          isReady: meta.laptop === "AMAN",
-          hasCharger: meta.charger === "ADA",
-          catatan: meta.keterangan || "",
-          assignedRoom: null,
-          assignedDesk: null
-        });
-        idx++;
+    const seenNames = new Set();
+    const seenIds = new Set();
+    const dateList = rekapLaptopsByDate[activeDate] || [];
+
+    dateList.forEach((r, idx) => {
+      const nama = String(r.nama || r.NAMA || "").trim();
+      if (!nama || seenNames.has(nama.toLowerCase())) return;
+      seenNames.add(nama.toLowerCase());
+
+      const nis = String(r.nis || r.NIS || idx + 1).trim();
+      const idLap = `LP-${nis}`;
+      seenIds.add(idLap.toLowerCase());
+
+      const rKelas = String(r.ruangKelas || r["RUANG KELAS"] || "").trim();
+      const rLaptop = String(r.ruangLaptop || r["RUANG LAPTOP"] || "").trim();
+      const isReady = (r.laptop || r.LAPTOP) !== "TIDAK AMAN";
+      const hasCharger = (r.charger || r.CHARGER) === "ADA";
+      const catatan = r.keterangan || r.KETERANGAN || "";
+
+      list.push({
+        idLaptop: idLap,
+        labelLaptop: `Laptop Mandiri (${r.kelas || r.KELAS || "-"})`,
+        pemilikLaptop: nama,
+        nis: nis,
+        kelas: r.kelas || r.KELAS || "",
+        ruangKelas: rKelas,
+        ruangLaptop: rLaptop,
+        isReady: isReady,
+        hasCharger: hasCharger,
+        catatan: catatan,
+        assignedRoom: null,
+        assignedDesk: null
       });
-    }
+    });
 
     const brands = [
       "Asus Vivobook 14 (Core i5, 8GB)",
@@ -195,6 +214,63 @@
     }
 
     return list;
+  }
+
+  
+  function getRoomBackupsStore(date, session, room) {
+    if (!roomBackups[date]) roomBackups[date] = {};
+    if (!roomBackups[date][session]) roomBackups[date][session] = {};
+    if (!roomBackups[date][session][room]) {
+      if (room === "Ruang Guru") {
+        const defaults = typeof generateDefaultRoomBackups === "function" ? generateDefaultRoomBackups() : {};
+        roomBackups[date][session][room] = (defaults["Ruang Guru"] || []).map((x) => ({ ...x }));
+      } else {
+        roomBackups[date][session][room] = [];
+      }
+    }
+    return roomBackups[date][session][room];
+  }
+
+  function syncLaptopPoolFromRekap() {
+    const existingIds = new Set(laptopPool.map((l) => String(l.idLaptop).toLowerCase()));
+    const existingOwners = new Set(laptopPool.map((l) => String(l.pemilikLaptop || "").trim().toLowerCase()));
+    const dateList = rekapLaptopsByDate[activeDate] || [];
+    let added = false;
+
+    dateList.forEach((r, idx) => {
+      const nama = String(r.nama || r.NAMA || "").trim();
+      if (!nama || existingOwners.has(nama.toLowerCase())) return;
+      const nis = String(r.nis || r.NIS || idx + 1).trim();
+      const idLap = `LP-${nis}`;
+      if (existingIds.has(idLap.toLowerCase())) return;
+
+      existingOwners.add(nama.toLowerCase());
+      existingIds.add(idLap.toLowerCase());
+
+      laptopPool.push({
+        idLaptop: idLap,
+        labelLaptop: `Laptop Mandiri (${r.kelas || r.KELAS || "-"})`,
+        pemilikLaptop: nama,
+        nis: nis,
+        kelas: r.kelas || r.KELAS || "",
+        ruangKelas: String(r.ruangKelas || r["RUANG KELAS"] || "").trim(),
+        ruangLaptop: String(r.ruangLaptop || r["RUANG LAPTOP"] || "").trim(),
+        isReady: (r.laptop || r.LAPTOP) !== "TIDAK AMAN",
+        hasCharger: (r.charger || r.CHARGER) === "ADA",
+        catatan: r.keterangan || r.KETERANGAN || "",
+        assignedRoom: null,
+        assignedDesk: null
+      });
+      added = true;
+    });
+
+    if (added) {
+      saveLaptopPool();
+    }
+  }
+
+  function generateDefaultLaptopPool() {
+    return buildLaptopPoolFromRekap();
   }
 
   // --- CASCADING AUTO-COPY & INHERITANCE ENGINE ---
@@ -252,33 +328,85 @@
   }
 
   function getEffectiveRoomBackups(date, session, room) {
-    if (!roomBackups[date]) roomBackups[date] = {};
-    if (!roomBackups[date][session]) roomBackups[date][session] = {};
+    const rCode = room === "Ruang Guru" ? "Ruang Guru" : room.replace("Ruang ", "R");
+    const roomAssignments = getEffectiveRoomAssignments(date, session, room);
 
-    if (roomBackups[date][session][room] && roomBackups[date][session][room].length > 0) {
-      return roomBackups[date][session][room];
-    }
+    // Track assigned owners & laptop IDs on desks in this room session
+    const assignedOwners = new Set();
+    const assignedIds = new Set();
+    Object.values(roomAssignments).forEach((a) => {
+      if (a && a.idLaptop && !a.unassigned) {
+        assignedIds.add(String(a.idLaptop).toLowerCase());
+        if (a.pemilikLaptop) assignedOwners.add(String(a.pemilikLaptop).toLowerCase().trim());
+      }
+    });
 
-    // Try inherit from earlier session or seed default
-    let predecessor = null;
-    if (session === "Sesi 2") {
-      predecessor = roomBackups[date]["Sesi 1"] && roomBackups[date]["Sesi 1"][room];
-    } else if (session === "Sesi 3") {
-      predecessor = (roomBackups[date]["Sesi 2"] && roomBackups[date]["Sesi 2"][room]) ||
-                    (roomBackups[date]["Sesi 1"] && roomBackups[date]["Sesi 1"][room]);
-    }
+    const cadanganList = [];
 
-    if (predecessor && predecessor.length > 0) {
-      roomBackups[date][session][room] = JSON.parse(JSON.stringify(predecessor));
-      saveRoomBackups();
-      return roomBackups[date][session][room];
-    }
+    // 1. Find all student laptops physically placed in this room
+    const dateList = rekapLaptopsByDate[date] || [];
+    dateList.forEach((r) => {
+      const rl = String(r.ruangLaptop || r["RUANG LAPTOP"] || "").trim().toUpperCase();
+      if (rl !== rCode.toUpperCase() && rl !== room.toUpperCase()) return;
 
-    // Seed from default generator
-    const defaults = typeof generateDefaultRoomBackups === "function" ? generateDefaultRoomBackups() : {};
-    roomBackups[date][session][room] = defaults[room] ? JSON.parse(JSON.stringify(defaults[room])) : [];
-    saveRoomBackups();
-    return roomBackups[date][session][room];
+      const nama = String(r.nama || r.NAMA || "").trim();
+      const nis = String(r.nis || r.NIS || "").trim();
+      const idLap = `LP-${nis || nama.replace(/\s+/g, "").substring(0, 8)}`;
+
+      // If already placed on a desk in this session, exclude from cadangan
+      if (assignedOwners.has(nama.toLowerCase()) || assignedIds.has(idLap.toLowerCase())) {
+        return;
+      }
+
+      const rKelas = String(r.ruangKelas || r["RUANG KELAS"] || "").trim();
+      const isCross = rKelas && rKelas.toUpperCase() !== rl;
+      const isReady = (r.laptop || r.LAPTOP) !== "TIDAK AMAN";
+      const hasCharger = (r.charger || r.CHARGER) === "ADA";
+      const catatan = r.keterangan || r.KETERANGAN || "";
+
+      // Check if student has a scheduled desk in this room roster for active session
+      const roomConf = ROOMS_DATA[room];
+      let scheduledDesk = null;
+      if (roomConf && roomConf.roster) {
+        const sesKey = session === "Sesi 1" ? "sesi1" : (session === "Sesi 2" ? "sesi2" : "sesi3");
+        for (const [dNo, deskData] of Object.entries(roomConf.roster)) {
+          if (deskData && deskData[sesKey] && deskData[sesKey].trim().toLowerCase() === nama.toLowerCase()) {
+            scheduledDesk = Number(dNo);
+            break;
+          }
+        }
+      }
+
+      cadanganList.push({
+        idLaptop: idLap,
+        labelLaptop: `Laptop Mandiri (${r.kelas || r.KELAS || "-"})`,
+        pemilikLaptop: nama,
+        nis: nis,
+        kelas: r.kelas || r.KELAS || "",
+        ruangKelas: rKelas,
+        ruangLaptop: rl,
+        isReady: isReady,
+        hasCharger: hasCharger,
+        catatan: catatan,
+        isBackup: true,
+        isRoomCadangan: true,
+        isCrossRoom: isCross,
+        scheduledDesk: scheduledDesk,
+        room: room
+      });
+    });
+
+    // 2. Add extra school spares in roomBackups
+    const extraSpares = getRoomBackupsStore(date, session, room);
+    extraSpares.forEach((extra) => {
+      if (extra && !assignedIds.has(String(extra.idLaptop).toLowerCase())) {
+        if (!cadanganList.some((c) => c.idLaptop.toLowerCase() === extra.idLaptop.toLowerCase())) {
+          cadanganList.push(extra);
+        }
+      }
+    });
+
+    return cadanganList;
   }
 
   // --- RENDERING VIEWS ---
@@ -356,6 +484,11 @@
     const pengawasBanner = document.getElementById("meja-pengawas-banner");
     if (pengawasBanner) {
       pengawasBanner.style.display = roomConf.isBackupCenter ? "none" : "flex";
+    }
+
+    const btnAutoPlot = document.getElementById("btn-auto-plot");
+    if (btnAutoPlot) {
+      btnAutoPlot.style.display = roomConf.isBackupCenter ? "none" : "inline-flex";
     }
 
     // Render Grid & Room Backups
@@ -587,22 +720,27 @@
     section.style.display = "flex";
 
     const backups = getEffectiveRoomBackups(activeDate, activeSession, roomName);
-    if (countBadge) countBadge.textContent = `${backups.length} Unit Siap Pakai`;
+    if (countBadge) countBadge.textContent = `${backups.length} Unit Tersedia (Cadangan)`;
+
+    const metricRoomBackups = document.getElementById("metric-room-backups");
+    if (metricRoomBackups) metricRoomBackups.textContent = backups.length;
 
     container.innerHTML = "";
 
     if (backups.length === 0) {
       container.innerHTML = `
-        <div class="col-span-full py-4 text-center text-slate-400 text-xs italic">
-          Belum ada laptop cadangan di ruangan ini. Tarik dari Ruang Guru atau Pool.
+        <div class="col-span-full py-6 text-center text-slate-400 text-xs italic flex flex-col items-center gap-1.5">
+          <i data-lucide="check-circle" class="w-5 h-5 text-emerald-500"></i>
+          <span>Semua laptop yang berada di ${roomName} telah terpasang ke meja. Tidak ada laptop cadangan tersisa di ruangan ini.</span>
         </div>
       `;
+      refreshIcons();
       return;
     }
 
     backups.forEach((b, idx) => {
       const card = document.createElement("div");
-      card.className = "bg-amber-50/50 hover:bg-amber-50 border border-amber-200 hover:border-amber-400 rounded-xl p-3 flex flex-col justify-between gap-2 shadow-2xs cursor-grab active:cursor-grabbing transition";
+      card.className = "bg-amber-50/70 hover:bg-amber-50 border border-amber-200 hover:border-amber-400 rounded-xl p-3 flex flex-col justify-between gap-2.5 shadow-2xs hover:shadow-xs cursor-grab active:cursor-grabbing transition";
       card.setAttribute("draggable", "true");
 
       card.addEventListener("dragstart", (e) => {
@@ -610,35 +748,102 @@
           source: "backup",
           fromRoom: roomName,
           backupIdx: idx,
-          idLaptop: b.idLaptop
+          idLaptop: b.idLaptop,
+          pemilikLaptop: b.pemilikLaptop
         }));
         card.classList.add("dragging");
       });
       card.addEventListener("dragend", () => card.classList.remove("dragging"));
 
       card.innerHTML = `
-        <div class="flex items-center justify-between">
-          <span class="px-2 py-0.5 rounded-md font-bold text-xs bg-amber-200 text-amber-900">${b.idLaptop}</span>
-          <div class="flex items-center gap-1.5">
+        <div class="flex items-center justify-between gap-1.5">
+          <div class="flex items-center gap-1.5 truncate">
+            <span class="px-2 py-0.5 rounded-md font-bold text-xs bg-amber-200 text-amber-900">${b.idLaptop}</span>
+            ${b.isCrossRoom ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">Asal ${b.ruangKelas}</span>` : ""}
+          </div>
+          <div class="flex items-center gap-1.5 flex-shrink-0">
             <span class="w-2.5 h-2.5 rounded-full ${b.isReady ? "bg-emerald-500" : "bg-rose-500"}" title="${b.isReady ? "Aman" : "Tidak Aman"}"></span>
             <span class="text-xs font-bold ${b.hasCharger ? "text-amber-600" : "text-rose-500"}">${b.hasCharger ? "⚡" : "✕"}</span>
           </div>
         </div>
 
         <div class="flex flex-col">
-          <span class="text-xs font-bold text-slate-900 truncate">${b.labelLaptop}</span>
-          <span class="text-[10px] text-slate-500 truncate">${b.pemilikLaptop}</span>
-          ${b.catatan ? `<span class="text-[10px] text-amber-800 mt-1">📝 ${b.catatan}</span>` : ""}
+          <span class="text-xs font-bold text-slate-900 truncate" title="${b.pemilikLaptop}">${b.pemilikLaptop}</span>
+          <span class="text-[10px] text-slate-500 truncate">${b.labelLaptop}</span>
+          ${b.catatan ? `<span class="text-[10px] text-amber-800 mt-0.5 truncate">📝 ${b.catatan}</span>` : ""}
         </div>
 
-        <div class="pt-2 border-t border-amber-200/60 flex items-center justify-between text-[11px]">
-          <span class="text-amber-700 font-semibold">Siap Ditukar</span>
-          <span class="text-slate-400 italic">Tarik ke meja</span>
+        <div class="pt-2 border-t border-amber-200/60 flex items-center justify-between text-[11px] gap-2">
+          <span class="text-amber-700 font-semibold text-[10px] truncate">
+            ${b.scheduledDesk ? `Jadwal: Meja ${b.scheduledDesk}` : "Cadangan"}
+          </span>
+          ${b.scheduledDesk ?
+            `<button type="button" class="btn-quick-plot px-2 py-0.5 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[10px] shadow-2xs transition" data-desk="${b.scheduledDesk}" data-id="${b.idLaptop}">Pasang M.${b.scheduledDesk}</button>` :
+            `<button type="button" class="btn-quick-plot-any px-2 py-0.5 rounded-md bg-slate-700 hover:bg-slate-800 text-white font-bold text-[10px] shadow-2xs transition" data-id="${b.idLaptop}">Pasang Meja</button>`
+          }
         </div>
       `;
 
+      // Quick Plot click listeners
+      const btnPlotDesk = card.querySelector(".btn-quick-plot");
+      if (btnPlotDesk) {
+        btnPlotDesk.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const targetDesk = Number(btnPlotDesk.dataset.desk);
+          assignBackupLaptopToDesk(roomName, targetDesk, b.idLaptop);
+        });
+      }
+
+      const btnPlotAny = card.querySelector(".btn-quick-plot-any");
+      if (btnPlotAny) {
+        btnPlotAny.addEventListener("click", (e) => {
+          e.stopPropagation();
+          quickAssignToFirstAvailableDesk(b.idLaptop);
+        });
+      }
+
       container.appendChild(card);
     });
+
+    refreshIcons();
+  }
+
+  function autoPlotRoomDesks(roomName) {
+    const roomConf = ROOMS_DATA[roomName];
+    if (!roomConf || roomConf.isBackupCenter) {
+      showToast("Ruangan ini tidak memiliki denah meja untuk diplot.", "info");
+      return;
+    }
+
+    const availableCadangan = getEffectiveRoomBackups(activeDate, activeSession, roomName);
+    const roomAssignments = getEffectiveRoomAssignments(activeDate, activeSession, roomName);
+
+    let plottedCount = 0;
+    const sesKey = activeSession === "Sesi 1" ? "sesi1" : (activeSession === "Sesi 2" ? "sesi2" : "sesi3");
+
+    for (let d = 1; d <= roomConf.totalDesks; d++) {
+      const cur = roomAssignments[d];
+      if (!cur || !cur.idLaptop || cur.unassigned) {
+        const studentName = (roomConf.roster && roomConf.roster[d] && roomConf.roster[d][sesKey]) || "";
+        if (!studentName) continue;
+
+        const targetLaptop = availableCadangan.find(
+          (c) => c.pemilikLaptop && c.pemilikLaptop.trim().toLowerCase() === studentName.trim().toLowerCase()
+        );
+
+        if (targetLaptop) {
+          assignBackupLaptopToDesk(roomName, d, targetLaptop.idLaptop);
+          plottedCount++;
+        }
+      }
+    }
+
+    if (plottedCount > 0) {
+      const remainingSpares = getEffectiveRoomBackups(activeDate, activeSession, roomName).length;
+      showToast(`${plottedCount} meja di ${roomName} berhasil diplot otomatis! (${remainingSpares} laptop tersisa sebagai cadangan)`, "success");
+    } else {
+      showToast(`Semua meja yang sesuai jadwal sudah terisi atau laptop siswa belum berada di ${roomName}.`, "warning");
+    }
   }
 
   function renderRuangGuruWorkspace() {
@@ -725,8 +930,8 @@
   }
 
   function promptDispatchSpareFromGuru(backupIdx) {
-    const guruBackups = getEffectiveRoomBackups(activeDate, activeSession, "Ruang Guru");
-    const item = guruBackups[backupIdx];
+    const guruStore = getRoomBackupsStore(activeDate, activeSession, "Ruang Guru");
+    const item = guruStore[backupIdx];
     if (!item) return;
 
     const targetRoom = prompt(`Kirim laptop ${item.idLaptop} ke ruangan mana? (Contoh: Ruang 1, Ruang 5, Ruang 8)`);
@@ -735,10 +940,9 @@
       return;
     }
 
-    // Move from Ruang Guru to target room's backups
-    guruBackups.splice(backupIdx, 1);
-    const targetBackups = getEffectiveRoomBackups(activeDate, activeSession, targetRoom);
-    targetBackups.push({
+    guruStore.splice(backupIdx, 1);
+    const targetStore = getRoomBackupsStore(activeDate, activeSession, targetRoom);
+    targetStore.push({
       ...item,
       room: targetRoom,
       pemilikLaptop: `Unit Cadangan ${targetRoom} (dari Ruang Guru)`
@@ -1239,10 +1443,28 @@
 
   // --- ASSIGNMENTS & OPTIMISTIC UPDATES ---
   function assignLaptopToDesk(roomName, deskNo, idLaptop, customDetails = null) {
-    const laptop = laptopPool.find((l) => l.idLaptop === idLaptop);
+    let laptop = laptopPool.find((l) => l.idLaptop === idLaptop);
+    if (!laptop) {
+      const dateList = rekapLaptopsByDate[activeDate] || [];
+      const student = dateList.find((r) => 
+        `LP-${r.nis || r.NIS}` === idLaptop || 
+        (r.nama && `LP-${r.nama}` === idLaptop) || 
+        (r.nama && r.nama === idLaptop)
+      );
+      if (student) {
+        laptop = {
+          idLaptop: idLaptop,
+          labelLaptop: `Laptop Mandiri (${student.kelas || student.KELAS || "-"})`,
+          pemilikLaptop: student.nama || student.NAMA,
+          isReady: (student.laptop || student.LAPTOP) !== "TIDAK AMAN",
+          hasCharger: (student.charger || student.CHARGER) === "ADA",
+          catatan: student.keterangan || student.KETERANGAN || ""
+        };
+        laptopPool.push(laptop);
+      }
+    }
     if (!laptop) return;
 
-    // Ensure session map exists
     if (!assignments[activeDate]) assignments[activeDate] = {};
     if (!assignments[activeDate][activeSession]) assignments[activeDate][activeSession] = {};
     if (!assignments[activeDate][activeSession][roomName]) assignments[activeDate][activeSession][roomName] = {};
@@ -1284,20 +1506,28 @@
     showToast(`Laptop ${idLaptop} dipasang ke ${roomName} Meja ${deskNo} (${activeDate} ${activeSession})`, "success");
   }
 
-  function assignBackupLaptopToDesk(roomName, deskNo, idLaptop) {
+  function assignBackupLaptopToDesk(roomName, deskNo, idLaptop, customDetails = null) {
     const backups = getEffectiveRoomBackups(activeDate, activeSession, roomName);
-    const bIdx = backups.findIndex((b) => b.idLaptop === idLaptop);
-    if (bIdx === -1) return;
+    const bItem = backups.find((b) => b.idLaptop === idLaptop);
+    if (!bItem) return;
 
-    const bItem = backups[bIdx];
-    backups.splice(bIdx, 1); // Remove from backups
-    saveRoomBackups();
+    let poolItem = laptopPool.find((l) => l.idLaptop === bItem.idLaptop);
+    if (!poolItem) {
+      poolItem = {
+        idLaptop: bItem.idLaptop,
+        labelLaptop: bItem.labelLaptop,
+        pemilikLaptop: bItem.pemilikLaptop,
+        isReady: bItem.isReady,
+        hasCharger: bItem.hasCharger,
+        catatan: bItem.catatan || ""
+      };
+      laptopPool.push(poolItem);
+    }
 
-    // Assign to desk
     assignLaptopToDesk(roomName, deskNo, bItem.idLaptop, {
-      isReady: bItem.isReady,
-      hasCharger: bItem.hasCharger,
-      catatan: bItem.catatan || `Cadangan ${roomName}`
+      isReady: customDetails ? customDetails.isReady : bItem.isReady,
+      hasCharger: customDetails ? customDetails.hasCharger : bItem.hasCharger,
+      catatan: customDetails ? customDetails.catatan : (bItem.catatan || `Cadangan ${roomName}`)
     });
   }
 
@@ -1394,11 +1624,14 @@
       return;
     }
 
-    // 1. Take first backup laptop
-    const backupLaptop = backups.shift();
+    const backupLaptop = backups[0];
+    const currentStore = getRoomBackupsStore(activeDate, activeSession, roomName);
+    const storeIdx = currentStore.findIndex((b) => b.idLaptop && b.idLaptop.toLowerCase() === backupLaptop.idLaptop.toLowerCase());
+    if (storeIdx !== -1) {
+      currentStore.splice(storeIdx, 1);
+    }
 
-    // 2. Move broken laptop to backups as TIDAK AMAN
-    backups.push({
+    currentStore.push({
       idLaptop: curAssignment.idLaptop,
       labelLaptop: curAssignment.labelLaptop,
       pemilikLaptop: curAssignment.pemilikLaptop,
@@ -1410,7 +1643,6 @@
     });
     saveRoomBackups();
 
-    // 3. Assign backup laptop to desk
     assignLaptopToDesk(roomName, deskNo, backupLaptop.idLaptop, {
       isReady: backupLaptop.isReady,
       hasCharger: backupLaptop.hasCharger,
@@ -1701,6 +1933,9 @@
             keterangan: row.KETERANGAN || ""
           }));
           saveRekapLaptopsByDate();
+          syncLaptopPoolFromRekap();
+          renderRoomBackups(activeRoom);
+          renderLaptopPool();
           if (currentTab === "tabel-laptop") renderRekapLaptopTable();
         }
 
@@ -2120,6 +2355,13 @@
 
     // CSV Export buttons
     document.getElementById("btn-export-csv").addEventListener("click", exportMasterCSV);
+
+    const btnAutoPlot = document.getElementById("btn-auto-plot");
+    if (btnAutoPlot) {
+      btnAutoPlot.addEventListener("click", () => {
+        autoPlotRoomDesks(activeRoom);
+      });
+    }
     document.getElementById("btn-rekap-export").addEventListener("click", exportMasterCSV);
     document.getElementById("btn-rekap-table-export").addEventListener("click", exportMasterCSV);
 
