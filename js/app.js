@@ -819,20 +819,59 @@
       return;
     }
 
-    // Ambil cadangan yang AMAN saja (TIDAK AMAN tidak diikutkan saat plot otomatis)
-    const rawCadangan = getEffectiveRoomBackups(activeDate, activeSession, roomName);
-    const safeCadangan = rawCadangan.filter(
-      (c) => c.isReady !== false && String(c.laptop || "AMAN").toUpperCase() !== "TIDAK AMAN"
+    const rCode = roomName === "Ruang Guru" ? "Ruang Guru" : roomName.replace("Ruang ", "R");
+    const dateList = rekapLaptopsByDate[activeDate] || [];
+
+    // 1. Kumpulkan seluruh unit laptop yang secara fisik berada di ruangan ini
+    const allLaptopsInRoom = [];
+    const seenLapIds = new Set();
+
+    dateList.forEach((r, idx) => {
+      const rl = String(r.ruangLaptop || r["RUANG LAPTOP"] || "").trim().toUpperCase();
+      if (rl !== rCode.toUpperCase() && rl !== roomName.toUpperCase()) return;
+
+      const nama = String(r.nama || r.NAMA || "").trim();
+      const nis = String(r.nis || r.NIS || idx + 1).trim();
+      const idLap = `LP-${nis || nama.replace(/\s+/g, "").substring(0, 8)}`;
+      if (seenLapIds.has(idLap.toLowerCase())) return;
+      seenLapIds.add(idLap.toLowerCase());
+
+      const isReady = (r.laptop || r.LAPTOP) !== "TIDAK AMAN";
+      const hasCharger = (r.charger || r.CHARGER) === "ADA";
+      const catatan = r.keterangan || r.KETERANGAN || "";
+
+      allLaptopsInRoom.push({
+        idLaptop: idLap,
+        labelLaptop: `Laptop Mandiri (${r.kelas || r.KELAS || "-"})`,
+        pemilikLaptop: nama,
+        nis: nis,
+        kelas: r.kelas || r.KELAS || "",
+        ruangKelas: String(r.ruangKelas || r["RUANG KELAS"] || "").trim(),
+        ruangLaptop: rl,
+        isReady: isReady,
+        hasCharger: hasCharger,
+        catatan: catatan
+      });
+    });
+
+    // Tambahkan juga unit cadangan inventaris sekolah di ruangan ini
+    const extraSpares = getRoomBackupsStore(activeDate, activeSession, roomName);
+    extraSpares.forEach((extra) => {
+      if (extra && !seenLapIds.has(String(extra.idLaptop).toLowerCase())) {
+        seenLapIds.add(String(extra.idLaptop).toLowerCase());
+        allLaptopsInRoom.push(extra);
+      }
+    });
+
+    // Filter HANYA laptop yang AMAN (laptop TIDAK AMAN tidak boleh diikutkan plot otomatis)
+    const safeLaptops = allLaptopsInRoom.filter(
+      (l) => l.isReady !== false && String(l.laptop || "AMAN").toUpperCase() !== "TIDAK AMAN"
     );
 
     const roomAssignments = getEffectiveRoomAssignments(activeDate, activeSession, roomName);
-    const usedLaptopIds = new Set();
-    let plottedPrimary = 0;
-    let plottedFallback = 0;
-
     const sesKey = activeSession === "Sesi 1" ? "sesi1" : (activeSession === "Sesi 2" ? "sesi2" : "sesi3");
-    
-    // Urutan sesi berikutnya untuk fallback peminjaman laptop
+
+    // Urutan sesi untuk fallback peminjaman laptop pada nomor meja yang sama
     let fallbackSessions = [];
     if (activeSession === "Sesi 1") {
       fallbackSessions = [
@@ -841,8 +880,8 @@
       ];
     } else if (activeSession === "Sesi 2") {
       fallbackSessions = [
-        { key: "sesi3", label: "Sesi 3" },
-        { key: "sesi1", label: "Sesi 1" }
+        { key: "sesi1", label: "Sesi 1" },
+        { key: "sesi3", label: "Sesi 3" }
       ];
     } else {
       fallbackSessions = [
@@ -851,47 +890,92 @@
       ];
     }
 
-    // TAHAP 1: Plot sesuai pemilik laptop untuk siswa sesi aktif di meja tersebut
-    for (let d = 1; d <= roomConf.totalDesks; d++) {
-      const cur = roomAssignments[d];
-      if (!cur || !cur.idLaptop || cur.unassigned) {
-        const studentName = (roomConf.roster && roomConf.roster[d] && roomConf.roster[d][sesKey]) || "";
-        if (!studentName) continue;
+    const plannedAssignments = {};
+    const claimedLaptopIds = new Set();
+    let plottedPrimary = 0;
+    let plottedFallback = 0;
+    let replacedCount = 0;
 
-        const targetLaptop = safeCadangan.find(
-          (c) => c.pemilikLaptop && c.pemilikLaptop.trim().toLowerCase() === studentName.trim().toLowerCase() && !usedLaptopIds.has(c.idLaptop.toLowerCase())
+    // TAHAP 1: Cari laptop milik siswa sesi aktif di meja masing-masing (Primary Owner)
+    for (let d = 1; d <= roomConf.totalDesks; d++) {
+      const studentName = (roomConf.roster && roomConf.roster[d] && roomConf.roster[d][sesKey]) || "";
+      if (!studentName) continue;
+
+      const targetLaptop = safeLaptops.find(
+        (l) => l.pemilikLaptop && l.pemilikLaptop.trim().toLowerCase() === studentName.trim().toLowerCase() && !claimedLaptopIds.has(l.idLaptop.toLowerCase())
+      );
+
+      if (targetLaptop) {
+        plannedAssignments[d] = {
+          laptop: targetLaptop,
+          isPrimary: true,
+          catatan: targetLaptop.catatan || ""
+        };
+        claimedLaptopIds.add(targetLaptop.idLaptop.toLowerCase());
+        plottedPrimary++;
+      }
+    }
+
+    // TAHAP 2: Jika ada meja yang belum mendapatkan laptop (siswa tidak mengumpulkan laptop / rusak),
+    // pinjam laptop milik siswa sesi sebelumnya atau sesudahnya di meja yang sama!
+    for (let d = 1; d <= roomConf.totalDesks; d++) {
+      if (plannedAssignments[d]) continue; // Meja ini sudah berhasil mendapatkan laptop pemiliknya
+
+      for (const fb of fallbackSessions) {
+        const candidateName = (roomConf.roster && roomConf.roster[d] && roomConf.roster[d][fb.key]) || "";
+        if (!candidateName) continue;
+
+        const fallbackLaptop = safeLaptops.find(
+          (l) => l.pemilikLaptop && l.pemilikLaptop.trim().toLowerCase() === candidateName.trim().toLowerCase() && !claimedLaptopIds.has(l.idLaptop.toLowerCase())
         );
 
-        if (targetLaptop) {
-          assignBackupLaptopToDesk(roomName, d, targetLaptop.idLaptop);
-          usedLaptopIds.add(targetLaptop.idLaptop.toLowerCase());
-          plottedPrimary++;
+        if (fallbackLaptop) {
+          const note = fallbackLaptop.catatan
+            ? `${fallbackLaptop.catatan} (Pinjam ${candidateName} ${fb.label})`
+            : `Pinjam laptop ${candidateName} (${fb.label})`;
+
+          plannedAssignments[d] = {
+            laptop: fallbackLaptop,
+            isPrimary: false,
+            catatan: note
+          };
+          claimedLaptopIds.add(fallbackLaptop.idLaptop.toLowerCase());
+          plottedFallback++;
+          break; // Meja ini sudah berhasil meminjam laptop
         }
       }
     }
 
-    // TAHAP 2: Jika ada meja kosong karena siswa tidak mengumpulkan laptop / rusak,
-    // pinjam laptop milik siswa sesi berikutnya yang duduk di meja yang sama!
+    // TAHAP 3: EKSEKUSI PENEMPATAN & UPDATE LAPTOP PADA SETIAP MEJA
     for (let d = 1; d <= roomConf.totalDesks; d++) {
       const cur = roomAssignments[d];
-      if (!cur || !cur.idLaptop || cur.unassigned) {
-        for (const fb of fallbackSessions) {
-          const candidateName = (roomConf.roster && roomConf.roster[d] && roomConf.roster[d][fb.key]) || "";
-          if (!candidateName) continue;
+      const plan = plannedAssignments[d];
 
-          const fallbackLaptop = safeCadangan.find(
-            (c) => c.pemilikLaptop && c.pemilikLaptop.trim().toLowerCase() === candidateName.trim().toLowerCase() && !usedLaptopIds.has(c.idLaptop.toLowerCase())
-          );
+      if (plan) {
+        // Jika meja sebelumnya berisi laptop lain yang berbeda (misal peninggalan sesi 1),
+        // lepaskan hak laptop lama tersebut agar kembali menjadi cadangan sesi ini
+        if (cur && cur.idLaptop && cur.pemilikLaptop && cur.pemilikLaptop.toLowerCase() !== plan.laptop.pemilikLaptop.toLowerCase()) {
+          clearRekapDeskPosition(activeDate, cur.pemilikLaptop, activeSession);
+          const oldLap = laptopPool.find((l) => l.idLaptop === cur.idLaptop);
+          if (oldLap) {
+            oldLap.assignedRoom = null;
+            oldLap.assignedDesk = null;
+          }
+          replacedCount++;
+        }
 
-          if (fallbackLaptop) {
-            assignBackupLaptopToDesk(roomName, d, fallbackLaptop.idLaptop, {
-              isReady: fallbackLaptop.isReady,
-              hasCharger: fallbackLaptop.hasCharger,
-              catatan: fallbackLaptop.catatan ? `${fallbackLaptop.catatan} (Pinjam ${candidateName} ${fb.label})` : `Pinjam laptop ${candidateName} (${fb.label})`
-            });
-            usedLaptopIds.add(fallbackLaptop.idLaptop.toLowerCase());
-            plottedFallback++;
-            break; // Meja ini sudah berhasil mendapatkan laptop pinjaman
+        // Pasangkan laptop yang sesuai
+        assignBackupLaptopToDesk(roomName, d, plan.laptop.idLaptop, {
+          isReady: plan.laptop.isReady,
+          hasCharger: plan.laptop.hasCharger,
+          catatan: plan.catatan
+        });
+      } else {
+        // Jika meja tidak memperoleh laptop yang aman (atau laptop lama diklaim meja lain / tidak aman),
+        // lepaskan dari meja agar meja kosong dan laptop tidak aman masuk cadangan
+        if (cur && cur.idLaptop && !cur.unassigned) {
+          if (claimedLaptopIds.has(cur.idLaptop.toLowerCase()) || cur.isReady === false) {
+            unassignLaptopFromDesk(roomName, d);
           }
         }
       }
@@ -899,12 +983,15 @@
 
     const totalPlotted = plottedPrimary + plottedFallback;
     const remainingSpares = getEffectiveRoomBackups(activeDate, activeSession, roomName).length;
-    const skippedUnsafe = rawCadangan.length - safeCadangan.length;
+    const skippedUnsafe = allLaptopsInRoom.length - safeLaptops.length;
 
     if (totalPlotted > 0) {
-      let msg = `${totalPlotted} meja di ${roomName} berhasil diplot (${plottedPrimary} laptop sendiri, ${plottedFallback} pinjam sesi berikutnya)!`;
+      let msg = `${totalPlotted} meja di ${roomName} berhasil diplot (${plottedPrimary} laptop sendiri, ${plottedFallback} pinjam sesi sebelum/sesudahnya)!`;
+      if (replacedCount > 0) {
+        msg += ` (${replacedCount} meja disesuaikan dengan pemilik sesi ini)`;
+      }
       if (skippedUnsafe > 0) {
-        msg += ` (${skippedUnsafe} laptop TIDAK AMAN dilewati & tetap di cadangan)`;
+        msg += ` [${skippedUnsafe} laptop TIDAK AMAN tetap di cadangan]`;
       }
       showToast(msg, "success");
     } else {
