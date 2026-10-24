@@ -141,6 +141,8 @@ function doGet(e) {
       }
     } else if (action === "cleanPinjam") {
       result = cleanPinjamNotes(ss);
+    } else if (action === "syncKeterangan") {
+      result = syncKeteranganFromPersiapan(ss);
     } else if (action === "getSheetData") {
       const sName = (e && e.parameter && e.parameter.sheetName) || "Rekap_Persiapan";
       const sheet = ss.getSheetByName(sName);
@@ -242,7 +244,6 @@ function handleUpdateRekapRow(ss, payload) {
   const keberadaan = payload.keberadaan === true || payload.keberadaan === "true" || payload.keberadaan === 1 || payload.keberadaan === "TRUE";
   const charger = String(payload.charger || "ADA").toUpperCase();
   const laptopStatus = String(payload.laptopStatus || payload.laptop || "AMAN").toUpperCase();
-  const keterangan = String(payload.keterangan || payload.catatan || "").trim();
 
   if (!nama && !nis) {
     return { success: false, error: "Missing required identifier: NIS or Nama" };
@@ -260,6 +261,14 @@ function handleUpdateRekapRow(ss, payload) {
     }
   }
 
+  const existingKeterangan = targetRow > 0 ? String(values[targetRow - 1][11] || "").trim() : "";
+  let finalKeterangan = existingKeterangan;
+  if (payload.keterangan !== undefined && payload.keterangan !== "") {
+    finalKeterangan = String(payload.keterangan).trim();
+  } else if (payload.forceKeterangan === true) {
+    finalKeterangan = "";
+  }
+
   const rowData = [
     nis || (targetRow > 0 ? values[targetRow - 1][0] : ""),
     nama || (targetRow > 0 ? values[targetRow - 1][1] : ""),
@@ -272,7 +281,7 @@ function handleUpdateRekapRow(ss, payload) {
     keberadaan ? true : false,
     charger.indexOf("TIDAK") !== -1 ? "TIDAK ADA" : "ADA",
     laptopStatus.indexOf("TIDAK") !== -1 ? "TIDAK AMAN" : "AMAN",
-    keterangan,
+    finalKeterangan,
     now
   ];
 
@@ -397,9 +406,12 @@ function handleUpdateAssignment(ss, payload) {
       ruangLaptop: rCode, // Tetap berada di ruangan ini (sebagai cadangan ruangan)
       keberadaan: true,
       charger: hasCharger ? "ADA" : "TIDAK ADA",
-      laptopStatus: isReady ? "AMAN" : "TIDAK AMAN",
-      keterangan: catatan
+      laptopStatus: isReady ? "AMAN" : "TIDAK AMAN"
     };
+
+    if (catatan) {
+      rekapUpdate.keterangan = catatan;
+    }
 
     if (sesi === "Sesi 1") rekapUpdate.sesi1 = deskText;
     else if (sesi === "Sesi 2") rekapUpdate.sesi2 = deskText;
@@ -588,6 +600,116 @@ function cleanDataRuanganUncollected(ss) {
   SpreadsheetApp.flush();
 }
 
+
+/**
+ * Synchronize KETERANGAN column across all 4 date sheets with Rekap_Persiapan.
+ * Guarantees that every student's technical notes match Rekap_Persiapan 100%.
+ * Also strips any fake/test rows (e.g. Uji Coba) from date sheets and syncs Data_Ruangan catatan.
+ */
+function syncKeteranganFromPersiapan(ss) {
+  const sPersiapan = ss.getSheetByName("Rekap_Persiapan");
+  if (!sPersiapan) return { success: false, error: "Rekap_Persiapan sheet not found" };
+
+  const persiapanData = getSheetDataAsObjects(sPersiapan);
+  const notesMap = {};
+  const validNames = new Set();
+
+  persiapanData.forEach(function (p) {
+    const name = String(p.NAMA || "").trim();
+    if (!name) return;
+    const nameKey = name.toLowerCase();
+    validNames.add(nameKey);
+    const ket = String(p.KET || p.KETERANGAN || p.Catatan || "").trim();
+    notesMap[nameKey] = ket;
+  });
+
+  const sheetResults = {};
+
+  ["Rekap_26_Okt", "Rekap_27_Okt", "Rekap_28_Okt", "Rekap_29_Okt"].forEach(function (sheetName) {
+    const sheet = ss.getSheetByName(sheetName);
+    if (!sheet) return;
+
+    const range = sheet.getDataRange();
+    const values = range.getValues();
+    if (values.length <= 1) return;
+
+    let updatedCount = 0;
+    const cleanedRows = [values[0]]; // header
+
+    for (let i = 1; i < values.length; i++) {
+      const row = values[i];
+      const nama = String(row[1] || "").trim();
+      const namaKey = nama.toLowerCase();
+
+      // Skip test rows or empty names
+      if (!nama || namaKey.indexOf("uji coba") !== -1 || (!validNames.has(namaKey) && !row[0])) {
+        continue;
+      }
+
+      if (notesMap.hasOwnProperty(namaKey)) {
+        const expectedKet = notesMap[namaKey];
+        if (String(row[11] || "").trim() !== expectedKet) {
+          row[11] = expectedKet;
+          updatedCount++;
+        }
+      }
+      cleanedRows.push(row);
+    }
+
+    // Overwrite sheet with cleaned and synchronized rows
+    sheet.clearContents();
+    sheet.getRange(1, 1, cleanedRows.length, HEADERS_REKAP.length).setValues(cleanedRows);
+    sheetResults[sheetName] = {
+      totalRows: cleanedRows.length - 1,
+      keteranganUpdated: updatedCount
+    };
+  });
+
+  // Clean and sync Data_Ruangan catatan
+  const sRooms = ss.getSheetByName(SHEET_ROOMS);
+  let cleanedRoomsCount = 0;
+  if (sRooms) {
+    const range = sRooms.getDataRange();
+    const values = range.getValues();
+    let modified = false;
+
+    for (let i = 1; i < values.length; i++) {
+      const pemilik = String(values[i][7] || "").trim().toLowerCase();
+      let currentCat = String(values[i][10] || "").trim();
+      
+      // Remove any leftover "Pinjam..." or "Cadangan..." text
+      let cleaned = currentCat.replace(/Pinjam\s+laptop\s+[^)]+\([^)]+\)/gi, "")
+                              .replace(/\(Pinjam\s+[^)]+\)/gi, "")
+                              .replace(/Pinjam\s+laptop\s+[^,;]+/gi, "")
+                              .replace(/Cadangan\s+Ruang\s+\d+/gi, "")
+                              .trim();
+      cleaned = cleaned.replace(/^[\s,;\-]+|[\s,;\-]+$/g, "").trim();
+
+      // If pemilik is in Rekap_Persiapan and has a technical note, sync it
+      if (notesMap.hasOwnProperty(pemilik) && notesMap[pemilik]) {
+        cleaned = notesMap[pemilik];
+      }
+
+      if (cleaned !== currentCat) {
+        values[i][10] = cleaned;
+        cleanedRoomsCount++;
+        modified = true;
+      }
+    }
+
+    if (modified) {
+      range.setValues(values);
+    }
+  }
+
+  SpreadsheetApp.flush();
+  return {
+    success: true,
+    message: "Keterangan synchronized with Rekap_Persiapan across all sheets",
+    sheets: sheetResults,
+    dataRuanganCleaned: cleanedRoomsCount
+  };
+}
 
 /**
  * Clean legacy "Pinjam laptop..." and "Cadangan..." text from KETERANGAN / CATATAN
