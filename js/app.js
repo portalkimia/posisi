@@ -15,12 +15,13 @@
   const STORAGE_KEY_ACTIVE_ROOM = "TKA_ACTIVE_ROOM_2026";
   const STORAGE_KEY_ACTIVE_DATE = "TKA_ACTIVE_DATE_2026";
   const STORAGE_KEY_QUEUE = "TKA_OFFLINE_QUEUE_2026";
+  const DEFAULT_GAS_URL = "https://script.google.com/macros/s/AKfycbwDvYEMSLq_oS8cQH8wvZRtQfqYEwTkINi6Haevbc-iOQXBNiEg6nyxBcT_vVOsChrr/exec";
 
   // --- STATE ---
   let activeDate = localStorage.getItem(STORAGE_KEY_ACTIVE_DATE) || "2026-10-26";
   let activeRoom = localStorage.getItem(STORAGE_KEY_ACTIVE_ROOM) || "Ruang 1";
   let activeSession = "Sesi 1";
-  let gasUrl = localStorage.getItem(STORAGE_KEY_GAS_URL) || "";
+  let gasUrl = localStorage.getItem(STORAGE_KEY_GAS_URL) || DEFAULT_GAS_URL;
   let currentFilter = "all";
   let searchQuery = "";
   let isSyncing = false;
