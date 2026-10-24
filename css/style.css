@@ -1,0 +1,51 @@
+/* Custom styles for TKA Laptop Assignment SPA */
+
+@layer utilities {
+  .drag-over {
+    @apply border-indigo-500 bg-indigo-50 scale-[1.02] shadow-lg ring-2 ring-indigo-400;
+  }
+  .dragging {
+    @apply opacity-50 scale-95;
+  }
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Desk Card Layout Animation */
+.desk-card {
+  transition: all 0.18s ease-in-out;
+}
+.desk-card:hover {
+  transform: translateY(-2px);
+}
+
+/* Pulse animation for sync indicator */
+@keyframes pulse-subtle {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+.animate-pulse-subtle {
+  animation: pulse-subtle 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Touch drag optimization */
+[draggable="true"] {
+  -webkit-user-drag: element;
+  user-select: none;
+  touch-action: manipulation;
+}
