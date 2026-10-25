@@ -17,6 +17,13 @@
   const STORAGE_KEY_QUEUE = "TKA_OFFLINE_QUEUE_2026";
   const DEFAULT_GAS_URL = "https://script.google.com/macros/s/AKfycbwDvYEMSLq_oS8cQH8wvZRtQfqYEwTkINi6Haevbc-iOQXBNiEg6nyxBcT_vVOsChrr/exec";
 
+  // --- HELPERS ---
+  function esc(str) {
+    return String(str == null ? "" : str)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  }
+
   // --- STATE ---
   let activeDate = localStorage.getItem(STORAGE_KEY_ACTIVE_DATE) || "2026-10-26";
   let activeRoom = localStorage.getItem(STORAGE_KEY_ACTIVE_ROOM) || "Ruang 1";
@@ -734,7 +741,7 @@ function getRoomBackupsStore(date, session, room) {
     
     const studentLabel = document.createElement("span");
     studentLabel.className = "text-[10px] uppercase font-bold text-slate-500 flex items-center justify-between";
-    studentLabel.innerHTML = `<span>${activeSession}</span>`;
+    studentLabel.innerHTML = `<span>${esc(activeSession)}</span>`;
     studentRow.appendChild(studentLabel);
 
     const studentNameEl = document.createElement("div");
@@ -873,7 +880,7 @@ function getRoomBackupsStore(date, session, room) {
       container.innerHTML = `
         <div class="col-span-full py-6 text-center text-slate-400 text-xs italic flex flex-col items-center gap-1.5">
           <i data-lucide="check-circle" class="w-5 h-5 text-emerald-500"></i>
-          <span>Semua laptop yang berada di ${roomName} telah terpasang ke meja. Tidak ada laptop cadangan tersisa di ruangan ini.</span>
+          <span>Semua laptop yang berada di ${esc(roomName)} telah terpasang ke meja. Tidak ada laptop cadangan tersisa di ruangan ini.</span>
         </div>
       `;
       refreshIcons();
@@ -900,7 +907,7 @@ function getRoomBackupsStore(date, session, room) {
       card.innerHTML = `
         <div class="flex items-center justify-between gap-1.5">
           <div class="flex items-center gap-1.5 truncate">
-            <span class="text-xs font-black text-slate-900 truncate" title="${b.pemilikLaptop}">${b.pemilikLaptop}</span>
+            <span class="text-xs font-black text-slate-900 truncate" title="${esc(b.pemilikLaptop)}">${esc(b.pemilikLaptop)}</span>
           </div>
           <div class="flex items-center gap-1.5 flex-shrink-0">
             <span class="w-2.5 h-2.5 rounded-full ${b.isReady ? "bg-emerald-500" : "bg-rose-500"}" title="${b.isReady ? "Aman" : "Tidak Aman"}"></span>
@@ -909,18 +916,18 @@ function getRoomBackupsStore(date, session, room) {
         </div>
 
         <div class="flex items-center gap-1.5 text-[10px] text-slate-500 truncate">
-          <span class="font-mono font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.2 rounded">${b.idLaptop}</span>
-          ${b.isCrossRoom ? `<span class="px-1.5 py-0.2 rounded font-bold bg-amber-100 text-amber-900 border border-amber-300">Asal ${b.ruangKelas}</span>` : `<span class="truncate">${b.labelLaptop}</span>`}
-          ${b.catatan ? `<span class="text-amber-800 truncate">📝 ${b.catatan}</span>` : ""}
+          <span class="font-mono font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.2 rounded">${esc(b.idLaptop)}</span>
+          ${b.isCrossRoom ? `<span class="px-1.5 py-0.2 rounded font-bold bg-amber-100 text-amber-900 border border-amber-300">Asal ${esc(b.ruangKelas)}</span>` : `<span class="truncate">${esc(b.labelLaptop)}</span>`}
+          ${b.catatan ? `<span class="text-amber-800 truncate">📝 ${esc(b.catatan)}</span>` : ""}
         </div>
 
         <div class="pt-2 border-t border-amber-200/60 flex items-center justify-between text-[11px] gap-2">
           <span class="text-amber-700 font-semibold text-[10px] truncate">
-            ${b.scheduledDesk ? `Jadwal: Meja ${b.scheduledDesk}` : "Cadangan"}
+            ${b.scheduledDesk ? `Jadwal: Meja ${esc(b.scheduledDesk)}` : "Cadangan"}
           </span>
           ${b.scheduledDesk ?
-            `<button type="button" class="btn-quick-plot px-2 py-0.5 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[10px] shadow-2xs transition" data-desk="${b.scheduledDesk}" data-id="${b.idLaptop}">Pasang M.${b.scheduledDesk}</button>` :
-            `<button type="button" class="btn-quick-plot-any px-2 py-0.5 rounded-md bg-slate-700 hover:bg-slate-800 text-white font-bold text-[10px] shadow-2xs transition" data-id="${b.idLaptop}">Pasang Meja</button>`
+            `<button type="button" class="btn-quick-plot px-2 py-0.5 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[10px] shadow-2xs transition" data-desk="${esc(b.scheduledDesk)}" data-id="${esc(b.idLaptop)}">Pasang M.${esc(b.scheduledDesk)}</button>` :
+            `<button type="button" class="btn-quick-plot-any px-2 py-0.5 rounded-md bg-slate-700 hover:bg-slate-800 text-white font-bold text-[10px] shadow-2xs transition" data-id="${esc(b.idLaptop)}">Pasang Meja</button>`
           }
         </div>
       `;
@@ -1204,7 +1211,7 @@ function getRoomBackupsStore(date, session, room) {
           ${guruBackups.map((b, idx) => `
             <div class="bg-slate-50 border border-slate-200 hover:border-indigo-400 rounded-2xl p-4 flex flex-col justify-between gap-3 shadow-2xs hover:shadow-sm transition">
               <div class="flex items-center justify-between">
-                <span class="px-2 py-0.5 rounded-md font-black text-xs bg-indigo-100 text-indigo-900">${b.idLaptop}</span>
+                <span class="px-2 py-0.5 rounded-md font-black text-xs bg-indigo-100 text-indigo-900">${esc(b.idLaptop)}</span>
                 <div class="flex items-center gap-1.5">
                   <span class="w-2.5 h-2.5 rounded-full ${b.isReady ? "bg-emerald-500" : "bg-rose-500"}"></span>
                   <span class="text-xs font-bold ${b.hasCharger ? "text-amber-600" : "text-rose-500"}">${b.hasCharger ? "⚡" : "✕"}</span>
@@ -1212,9 +1219,9 @@ function getRoomBackupsStore(date, session, room) {
               </div>
 
               <div class="flex flex-col">
-                <span class="text-xs font-black text-slate-900">${b.pemilikLaptop || b.labelLaptop}</span>
-                <span class="text-[11px] text-slate-500">${b.labelLaptop}</span>
-                ${b.catatan ? `<span class="text-[10px] text-slate-600 mt-1 bg-white p-1 rounded border border-slate-200">📝 ${b.catatan}</span>` : ""}
+                <span class="text-xs font-black text-slate-900">${esc(b.pemilikLaptop || b.labelLaptop)}</span>
+                <span class="text-[11px] text-slate-500">${esc(b.labelLaptop)}</span>
+                ${b.catatan ? `<span class="text-[10px] text-slate-600 mt-1 bg-white p-1 rounded border border-slate-200">📝 ${esc(b.catatan)}</span>` : ""}
               </div>
 
               <div class="pt-2 border-t border-slate-200 flex items-center justify-between text-xs">
@@ -1423,7 +1430,7 @@ function getRoomBackupsStore(date, session, room) {
       listContainer.innerHTML = `
         <div class="py-8 text-center text-slate-400 text-xs flex flex-col items-center gap-2">
           <i data-lucide="check-check" class="w-6 h-6 text-emerald-500"></i>
-          <span>${searchQuery ? "Tidak ada laptop cadangan yang cocok dengan pencarian." : (poolRoomFilter !== "ALL" ? `Tidak ada laptop cadangan tersisa di ${poolRoomFilter}.` : "Semua laptop telah terpasang di meja.")}</span>
+          <span>${searchQuery ? "Tidak ada laptop cadangan yang cocok dengan pencarian." : (poolRoomFilter !== "ALL" ? `Tidak ada laptop cadangan tersisa di ${esc(poolRoomFilter)}.` : "Semua laptop telah terpasang di meja.")}</span>
         </div>
       `;
       refreshIcons();
@@ -1453,7 +1460,7 @@ function getRoomBackupsStore(date, session, room) {
 
       item.innerHTML = `
         <div class="flex items-center justify-between gap-1.5">
-          <span class="text-xs font-black text-slate-900 truncate" title="${laptop.pemilikLaptop}">${laptop.pemilikLaptop}</span>
+          <span class="text-xs font-black text-slate-900 truncate" title="${esc(laptop.pemilikLaptop)}">${esc(laptop.pemilikLaptop)}</span>
           <div class="flex items-center gap-1.5 flex-shrink-0">
             <span class="w-2.5 h-2.5 rounded-full ${laptop.isReady ? "bg-emerald-500" : "bg-rose-500"}" title="${laptop.isReady ? "Aman" : "Tidak Aman"}"></span>
             <span class="text-xs font-bold ${laptop.hasCharger ? "text-amber-600" : "text-rose-500"}" title="${laptop.hasCharger ? "Ada Charger" : "Tanpa Charger"}">${laptop.hasCharger ? "⚡" : "✕"}</span>
@@ -1461,18 +1468,18 @@ function getRoomBackupsStore(date, session, room) {
         </div>
 
         <div class="flex items-center gap-1.5 text-[10px] text-slate-500 truncate">
-          <span class="font-mono font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.2 rounded">${laptop.idLaptop}</span>
-          <span class="truncate">${laptop.kelas || laptop.labelLaptop || ""}</span>
-          ${laptop.ruangKelas && laptop.ruangKelas !== laptop.ruangLaptop ? `<span class="text-[9px] px-1 rounded bg-slate-200 text-slate-700">Kelas ${laptop.ruangKelas}</span>` : ""}
+          <span class="font-mono font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.2 rounded">${esc(laptop.idLaptop)}</span>
+          <span class="truncate">${esc(laptop.kelas || laptop.labelLaptop || "")}</span>
+          ${laptop.ruangKelas && laptop.ruangKelas !== laptop.ruangLaptop ? `<span class="text-[9px] px-1 rounded bg-slate-200 text-slate-700">Kelas ${esc(laptop.ruangKelas)}</span>` : ""}
         </div>
 
         <div class="pt-1.5 border-t border-slate-200/60 flex items-center justify-between gap-2 text-xs">
           <span class="px-2 py-0.5 rounded-md text-[10px] font-black ${isCurrentRoom ? 'bg-emerald-100 text-emerald-900 border border-emerald-300' : 'bg-amber-100 text-amber-900 border border-amber-300'} flex items-center gap-1 truncate" title="Lokasi fisik laptop cadangan ini saat ini">
             <i data-lucide="map-pin" class="w-3 h-3 ${isCurrentRoom ? 'text-emerald-700' : 'text-amber-700'}"></i>
-            <span>${isCurrentRoom ? `Ruang Ini (${laptop.ruangLaptop})` : `Ruang ${laptop.ruangLaptop}`}</span>
+            <span>${isCurrentRoom ? `Ruang Ini (${esc(laptop.ruangLaptop)})` : `Ruang ${esc(laptop.ruangLaptop)}`}</span>
           </span>
 
-          <button type="button" class="btn-pool-quick-assign px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[10px] shadow-2xs transition flex items-center gap-1" title="Pasang ke meja aktif di ${activeRoom}">
+          <button type="button" class="btn-pool-quick-assign px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[10px] shadow-2xs transition flex items-center gap-1" title="Pasang ke meja aktif di ${esc(activeRoom)}">
             <i data-lucide="plus-circle" class="w-3 h-3"></i>
             <span>Pasang Meja</span>
           </button>
@@ -1614,7 +1621,7 @@ function getRoomBackupsStore(date, session, room) {
           <td colspan="13" class="py-12 text-center text-slate-400">
             <div class="flex flex-col items-center gap-2">
               <i data-lucide="filter-x" class="w-8 h-8 text-slate-300"></i>
-              <span>Tidak ada data siswa yang cocok dengan filter pada tanggal ${curDateConf.label}.</span>
+              <span>Tidak ada data siswa yang cocok dengan filter pada tanggal ${esc(curDateConf.label)}.</span>
             </div>
           </td>
         </tr>
@@ -1629,51 +1636,51 @@ function getRoomBackupsStore(date, session, room) {
       tr.className = "hover:bg-indigo-50/30 transition text-xs " + (idx % 2 === 0 ? "bg-white" : "bg-slate-50/50");
 
       tr.innerHTML = `
-        <td class="py-2.5 px-3 font-mono font-bold text-slate-700 whitespace-nowrap">${row.nis || "-"}</td>
-        <td class="py-2.5 px-3 font-bold text-slate-900 whitespace-nowrap">${row.nama}</td>
-        <td class="py-2.5 px-2 text-center whitespace-nowrap text-slate-600 font-semibold">${row.kelas || "-"}</td>
+        <td class="py-2.5 px-3 font-mono font-bold text-slate-700 whitespace-nowrap">${esc(row.nis || "-")}</td>
+        <td class="py-2.5 px-3 font-bold text-slate-900 whitespace-nowrap">${esc(row.nama)}</td>
+        <td class="py-2.5 px-2 text-center whitespace-nowrap text-slate-600 font-semibold">${esc(row.kelas || "-")}</td>
         <td class="py-2.5 px-2 text-center whitespace-nowrap">
           <span class="px-2 py-0.5 rounded-md font-bold text-slate-700 bg-slate-100 border border-slate-200">
-            ${row.ruangKelas || "-"}
+            ${esc(row.ruangKelas || "-")}
           </span>
         </td>
         <td class="py-2.5 px-2 text-center whitespace-nowrap">
           <span class="px-2 py-0.5 rounded-md font-bold ${isCross ? "bg-amber-100 text-amber-900 border border-amber-300 ring-2 ring-amber-200" : "bg-indigo-50 text-indigo-700 border border-indigo-200"}">
-            ${row.ruangLaptop || "-"}
+            ${esc(row.ruangLaptop || "-")}
           </span>
         </td>
         <td class="py-2.5 px-2 text-center whitespace-nowrap font-bold text-indigo-900 bg-slate-100/70 border-x border-slate-200/50">
-          ${row.sesi1 || "-"}
+          ${esc(row.sesi1 || "-")}
         </td>
         <td class="py-2.5 px-2 text-center whitespace-nowrap font-bold text-indigo-900 bg-slate-100/70 border-r border-slate-200/50">
-          ${row.sesi2 || "-"}
+          ${esc(row.sesi2 || "-")}
         </td>
         <td class="py-2.5 px-2 text-center whitespace-nowrap font-bold text-indigo-900 bg-slate-100/70 border-r border-slate-200/50">
-          ${row.sesi3 || "-"}
+          ${esc(row.sesi3 || "-")}
         </td>
         <td class="py-2.5 px-2 text-center whitespace-nowrap">
           <div class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold ${row.keberadaan ? "bg-emerald-50 text-emerald-800 border border-emerald-300" : "bg-rose-50 text-rose-700 border border-rose-200"}">
-            <input type="checkbox" class="rekap-cb-keberadaan w-3.5 h-3.5 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer" data-nis="${row.nis}" data-nama="${row.nama}" ${row.keberadaan ? "checked" : ""}>
+            <input type="checkbox" class="rekap-cb-keberadaan w-3.5 h-3.5 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer" data-nis="${esc(row.nis)}" data-nama="${esc(row.nama)}" ${row.keberadaan ? "checked" : ""}>
             <span>${row.keberadaan ? "Ada di Ruang" : "Belum Kumpul"}</span>
           </div>
         </td>
         <td class="py-2.5 px-2 text-center whitespace-nowrap">
-          <select class="rekap-select-charger appearance-none px-2 py-1 rounded-lg text-xs font-bold border cursor-pointer ${row.charger === "TIDAK ADA" ? "bg-red-600 text-white border-red-700 shadow-sm" : "bg-slate-100 text-slate-800 border-slate-300"}" data-nis="${row.nis}" data-nama="${row.nama}">
+          <select class="rekap-select-charger appearance-none px-2 py-1 rounded-lg text-xs font-bold border cursor-pointer ${row.charger === "TIDAK ADA" ? "bg-red-600 text-white border-red-700 shadow-sm" : "bg-slate-100 text-slate-800 border-slate-300"}" data-nis="${esc(row.nis)}" data-nama="${esc(row.nama)}">
             <option value="ADA" ${row.charger === "ADA" ? "selected" : ""}>ADA</option>
             <option value="TIDAK ADA" ${row.charger === "TIDAK ADA" ? "selected" : ""}>TIDAK ADA</option>
           </select>
         </td>
         <td class="py-2.5 px-2 text-center whitespace-nowrap">
-          <select class="rekap-select-laptop appearance-none px-2 py-1 rounded-lg text-xs font-bold border cursor-pointer ${row.laptop === "TIDAK AMAN" ? "bg-amber-500 text-white border-amber-600" : "bg-slate-100 text-slate-800 border-slate-300"}" data-nis="${row.nis}" data-nama="${row.nama}">
+          <select class="rekap-select-laptop appearance-none px-2 py-1 rounded-lg text-xs font-bold border cursor-pointer ${row.laptop === "TIDAK AMAN" ? "bg-amber-500 text-white border-amber-600" : "bg-slate-100 text-slate-800 border-slate-300"}" data-nis="${esc(row.nis)}" data-nama="${esc(row.nama)}">
             <option value="AMAN" ${row.laptop === "AMAN" ? "selected" : ""}>AMAN</option>
             <option value="TIDAK AMAN" ${row.laptop === "TIDAK AMAN" ? "selected" : ""}>TIDAK AMAN</option>
           </select>
         </td>
         <td class="py-2.5 px-3 min-w-[200px]">
-          <input type="text" class="rekap-input-keterangan w-full bg-transparent hover:bg-white focus:bg-white border-b border-transparent hover:border-slate-300 focus:border-indigo-500 rounded px-1.5 py-0.5 text-xs text-slate-800 transition outline-none" value="${row.keterangan || ""}" placeholder="Catatan teknisi..." data-nis="${row.nis}" data-nama="${row.nama}">
+          <input type="text" class="rekap-input-keterangan w-full bg-transparent hover:bg-white focus:bg-white border-b border-transparent hover:border-slate-300 focus:border-indigo-500 rounded px-1.5 py-0.5 text-xs text-slate-800 transition outline-none" value="${esc(row.keterangan || "")}" placeholder="Catatan teknisi..." data-nis="${esc(row.nis)}" data-nama="${esc(row.nama)}">
         </td>
         <td class="py-2.5 px-2 text-center whitespace-nowrap">
-          <button class="rekap-btn-jump p-1 rounded-lg text-indigo-600 hover:bg-indigo-50 transition" title="Buka di Denah Ruang" data-room="${row.ruangLaptop}">
+          <button class="rekap-btn-jump p-1 rounded-lg text-indigo-600 hover:bg-indigo-50 transition" title="Buka di Denah Ruang" data-room="${esc(row.ruangLaptop)}">
             <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
           </button>
         </td>
@@ -1817,11 +1824,11 @@ function getRoomBackupsStore(date, session, room) {
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-2">
             <span class="w-8 h-8 rounded-xl bg-white border border-slate-200 flex items-center justify-center font-bold text-slate-800 text-xs shadow-2xs">
-              ${isGuru ? "RG" : roomName.replace("Ruang ", "R")}
+              ${isGuru ? "RG" : esc(roomName.replace("Ruang ", "R"))}
             </span>
             <div>
-              <h3 class="font-bold text-sm text-slate-900">${roomName}</h3>
-              <p class="text-[11px] text-slate-500">${isGuru ? "Pusat Cadangan" : conf.sessions.join(", ")}</p>
+              <h3 class="font-bold text-sm text-slate-900">${esc(roomName)}</h3>
+              <p class="text-[11px] text-slate-500">${isGuru ? "Pusat Cadangan" : esc(conf.sessions.join(", "))}</p>
             </div>
           </div>
           <span class="px-2.5 py-0.5 rounded-full text-xs font-bold ${
@@ -1852,7 +1859,7 @@ function getRoomBackupsStore(date, session, room) {
           <span class="text-amber-600 font-semibold flex items-center gap-1">
             <span>⚡</span> ${isGuru ? `${backups.length} Charger` : `${backups.length} Cadangan`}
           </span>
-          <button class="btn-jump-room text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-1" data-room="${roomName}">
+          <button class="btn-jump-room text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-1" data-room="${esc(roomName)}">
             <span>Buka Ruang</span>
             <i data-lucide="chevron-right" class="w-3.5 h-3.5"></i>
           </button>
@@ -2157,12 +2164,12 @@ function getRoomBackupsStore(date, session, room) {
       const isReady = laptop ? laptop.isReady : true;
       const rLoc = laptop ? (laptop.ruangLaptop || activeRoom) : activeRoom;
       infoEl.innerHTML = `
-        <span class="font-bold text-slate-900">${owner}</span>
-        <span class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-indigo-50 text-indigo-700 border border-indigo-200">${idLaptop}</span>
+        <span class="font-bold text-slate-900">${esc(owner)}</span>
+        <span class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-indigo-50 text-indigo-700 border border-indigo-200">${esc(idLaptop)}</span>
         <span class="px-1.5 py-0.5 rounded text-[10px] font-bold ${isReady ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-amber-50 text-amber-700 border border-amber-200"}">
           ${isReady ? "✅ AMAN" : "⚠️ TIDAK AMAN"}
         </span>
-        <span class="text-[10px] text-slate-500 font-medium">📍 Lokasi: ${rLoc}</span>
+        <span class="text-[10px] text-slate-500 font-medium">📍 Lokasi: ${esc(rLoc)}</span>
       `;
     }
 
@@ -2200,7 +2207,7 @@ function getRoomBackupsStore(date, session, room) {
               <span class="px-2 py-0.5 rounded-md bg-slate-900 text-white font-black text-xs">Meja ${d}</span>
               <span class="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">KOSONG</span>
             </div>
-            <span class="text-xs font-semibold text-slate-700 truncate mt-1">Peserta Sesi: ${studentName || "(Kosong)"}</span>
+            <span class="text-xs font-semibold text-slate-700 truncate mt-1">Peserta Sesi: ${esc(studentName || "(Kosong)")}</span>
           </div>
           <button type="button" class="px-2.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-2xs transition flex-shrink-0 flex items-center gap-1">
             <i data-lucide="check" class="w-3.5 h-3.5"></i>
@@ -2215,8 +2222,8 @@ function getRoomBackupsStore(date, session, room) {
               <span class="px-2 py-0.5 rounded-md bg-slate-700 text-white font-black text-xs">Meja ${d}</span>
               <span class="text-[10px] font-bold text-slate-500 bg-slate-200 px-1.5 py-0.5 rounded">TERISI</span>
             </div>
-            <span class="text-xs font-semibold text-slate-700 truncate mt-1">Peserta: ${studentName || "(Kosong)"}</span>
-            <span class="text-[11px] text-amber-800 font-medium truncate">Laptop: ${cur.pemilikLaptop || cur.idLaptop}</span>
+            <span class="text-xs font-semibold text-slate-700 truncate mt-1">Peserta: ${esc(studentName || "(Kosong)")}</span>
+            <span class="text-[11px] text-amber-800 font-medium truncate">Laptop: ${esc(cur.pemilikLaptop || cur.idLaptop)}</span>
           </div>
           <button type="button" class="px-2.5 py-1.5 rounded-lg bg-white hover:bg-amber-100 text-slate-700 hover:text-amber-900 border border-slate-300 hover:border-amber-400 font-bold text-xs transition flex-shrink-0">
             Ganti
@@ -2245,7 +2252,7 @@ function getRoomBackupsStore(date, session, room) {
       gridContainer.innerHTML = `
         <div class="col-span-full py-8 text-center text-slate-400 text-xs flex flex-col items-center gap-1.5">
           <i data-lucide="check-circle" class="w-6 h-6 text-emerald-500"></i>
-          <span>Semua meja di ${activeRoom} (${activeSession}) sudah terisi. Klik tab "Semua Meja" di atas jika ingin menukar atau mengganti meja terisi.</span>
+          <span>Semua meja di ${esc(activeRoom)} (${esc(activeSession)}) sudah terisi. Klik tab "Semua Meja" di atas jika ingin menukar atau mengganti meja terisi.</span>
         </div>
       `;
     }
@@ -2277,12 +2284,12 @@ function getRoomBackupsStore(date, session, room) {
       const isReady = laptop ? laptop.isReady : true;
       const rLoc = laptop ? (laptop.ruangLaptop || activeRoom) : activeRoom;
       infoEl.innerHTML = `
-        <span class="font-bold text-slate-900">${owner}</span>
-        <span class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-indigo-50 text-indigo-700 border border-indigo-200">${idLaptop}</span>
+        <span class="font-bold text-slate-900">${esc(owner)}</span>
+        <span class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-indigo-50 text-indigo-700 border border-indigo-200">${esc(idLaptop)}</span>
         <span class="px-1.5 py-0.5 rounded text-[10px] font-bold ${isReady ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-amber-50 text-amber-700 border border-amber-200"}">
           ${isReady ? "✅ AMAN" : "⚠️ TIDAK AMAN"}
         </span>
-        <span class="text-[10px] text-slate-500 font-medium">📍 Lokasi: ${rLoc}</span>
+        <span class="text-[10px] text-slate-500 font-medium">📍 Lokasi: ${esc(rLoc)}</span>
       `;
     }
 
@@ -2923,7 +2930,7 @@ function getRoomBackupsStore(date, session, room) {
           const chip = document.createElement("button");
           chip.type = "button";
           chip.className = "px-2 py-1 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 font-bold text-[11px] transition flex items-center gap-1 cursor-pointer";
-          chip.innerHTML = `<span>${b.pemilikLaptop || b.idLaptop}</span><span class="text-[9px] text-amber-700 bg-amber-200/60 px-1 rounded">${b.idLaptop}</span>`;
+          chip.innerHTML = `<span>${esc(b.pemilikLaptop || b.idLaptop)}</span><span class="text-[9px] text-amber-700 bg-amber-200/60 px-1 rounded">${esc(b.idLaptop)}</span>`;
           chip.addEventListener("click", () => {
             select.value = b.idLaptop;
             document.getElementById("modal-safety-select").value = b.isReady ? "AMAN" : "TIDAK AMAN";
@@ -3469,7 +3476,7 @@ function getRoomBackupsStore(date, session, room) {
         }
       } catch (err) {
         resBox.className = "p-3 rounded-xl border border-rose-200 bg-rose-50 text-[11px] text-rose-700 flex items-center gap-2";
-        resBox.innerHTML = `<i data-lucide="x-circle" class="w-4 h-4 text-rose-500"></i><span>Gagal terhubung (${err.message}). Pastikan Web App disetel 'Anyone'.</span>`;
+        resBox.innerHTML = `<i data-lucide="x-circle" class="w-4 h-4 text-rose-500"></i><span>Gagal terhubung (${esc(err.message)}). Pastikan Web App disetel 'Anyone'.</span>`;
       }
       refreshIcons();
     });
