@@ -2612,9 +2612,14 @@ function getRoomBackupsStore(date, session, room) {
     }, intervalMs);
   }
 
+  let isPolling = false;
+
   async function pollRoomStateFromGAS() {
     // Jangan lakukan polling jika sedang ada proses pengiriman antrian lokal
     if (!gasUrl || isSyncing || offlineQueue.length > 0) return;
+    if (isPolling) return;
+    isPolling = true;
+
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
     try {
@@ -2833,10 +2838,12 @@ function getRoomBackupsStore(date, session, room) {
         }
       }
     } catch (err) {
-      clearTimeout(timeoutId);
       if (err.name !== "AbortError") {
         console.warn("Poll state sync error:", err);
       }
+    } finally {
+      isPolling = false;
+      clearTimeout(timeoutId);
     }
   }
 
