@@ -212,19 +212,19 @@ function doPost(e) {
 
     // Flush pending changes to sheet before releasing lock!
     SpreadsheetApp.flush();
-    _persiapanCache = null;   // invalidate agar request berikutnya fresh
+    clearAllBatchCaches();
 
     return ContentService.createTextOutput(JSON.stringify(response))
       .setMimeType(ContentService.MimeType.JSON);
   } catch (err) {
-    _persiapanCache = null;
+    clearAllBatchCaches();
     return ContentService.createTextOutput(JSON.stringify({
       success: false,
       error: "Lock or Execution Error: " + err.toString(),
       retryable: true
     })).setMimeType(ContentService.MimeType.JSON);
   } finally {
-    _persiapanCache = null;
+    clearAllBatchCaches();
     try {
       lock.releaseLock();
     } catch (ignore) {}
@@ -251,7 +251,13 @@ function handleUpdateRekapRow(ss, payload) {
     return { success: false, error: "Missing required identifier: NIS or Nama" };
   }
 
-  const values = sheet.getDataRange().getDisplayValues();
+  let values;
+  if (_rekapCache && _rekapCache[sheetName]) {
+    values = _rekapCache[sheetName];
+  } else {
+    values = sheet.getDataRange().getDisplayValues();
+    if (_rekapCache) _rekapCache[sheetName] = values;
+  }
   let targetRow = -1;
 
   for (let i = 1; i < values.length; i++) {
@@ -304,9 +310,15 @@ function handleUpdateRekapRow(ss, payload) {
 
   if (targetRow > 0) {
     sheet.getRange(targetRow, 1, 1, HEADERS_REKAP.length).setValues([rowData]);
+    if (_rekapCache && _rekapCache[sheetName] && targetRow - 1 < _rekapCache[sheetName].length) {
+      _rekapCache[sheetName][targetRow - 1] = rowData;
+    }
   } else {
     sheet.appendRow(rowData);
     targetRow = sheet.getLastRow();
+    if (_rekapCache && _rekapCache[sheetName]) {
+      _rekapCache[sheetName].push(rowData);
+    }
   }
 
   return {
@@ -341,14 +353,27 @@ function handleBatchSyncDate(ss, tanggal, items) {
 /**
  * Bulk update desk assignments in Data_Ruangan & date sheets
  */
+let _persiapanCache = null;   // { data: [], timestamp: number }
+const PERSIAPAN_CACHE_TTL = 30000; // 30 detik
+let _roomsCache = null;
+let _rekapCache = {};
+
+function clearAllBatchCaches() {
+  _persiapanCache = null;
+  _roomsCache = null;
+  _rekapCache = {};
+}
+
 function handleBatchUpdateAssignments(ss, payload) {
   const items = payload.items || [];
   const results = [];
+  clearAllBatchCaches();
+
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
     results.push(handleUpdateAssignment(ss, item));
   }
-  _persiapanCache = null;
+  clearAllBatchCaches();
   const failed = results.filter(function(r) { return !r || r.success === false; });
   const succeeded = results.length - failed.length;
   SpreadsheetApp.flush();
@@ -365,9 +390,6 @@ function handleBatchUpdateAssignments(ss, payload) {
   }
   return { success: true, count: succeeded };
 }
-
-let _persiapanCache = null;   // { data: [], timestamp: number }
-const PERSIAPAN_CACHE_TTL = 30000; // 30 detik
 
 function getPersiapanDataCached(ss) {
   const now = Date.now();
@@ -441,7 +463,13 @@ function handleUpdateAssignment(ss, payload) {
   }
 
   // 1. Find existing row(s) in Data_Ruangan (with automatic duplicate detection)
-  const values = sheetRooms.getDataRange().getDisplayValues();
+  let values;
+  if (_roomsCache) {
+    values = _roomsCache;
+  } else {
+    values = sheetRooms.getDataRange().getDisplayValues();
+    if (_roomsCache) _roomsCache = values;
+  }
   let targetRow = -1;
   const duplicateRows = [];
   let oldIdLaptop = "";
@@ -482,8 +510,14 @@ function handleUpdateAssignment(ss, payload) {
 
   if (targetRow > 0) {
     sheetRooms.getRange(targetRow, 1, 1, HEADERS_ROOMS.length).setValues([rowData]);
+    if (_roomsCache && targetRow - 1 < _roomsCache.length) {
+      _roomsCache[targetRow - 1] = rowData;
+    }
   } else {
     sheetRooms.appendRow(rowData);
+    if (_roomsCache) {
+      _roomsCache.push(rowData);
+    }
   }
 
   // Delete any duplicate rows from bottom to top

@@ -87,7 +87,7 @@
 
   // --- LOCAL STATE LOADING & AUTO SEEDING ---
   const CACHE_VERSION_KEY = "tka_cache_version";
-  const CURRENT_CACHE_VERSION = "20261025_016";
+  const CURRENT_CACHE_VERSION = "20261025_017";
 
   function loadLocalState() {
     const savedVersion = localStorage.getItem(CACHE_VERSION_KEY);
@@ -1029,13 +1029,14 @@ function getRoomBackupsStore(date, session, room) {
     }
 
     // TAHAP 3: EKSEKUSI PENEMPATAN & UPDATE LAPTOP PADA SETIAP MEJA
+    const batchItems = [];
     for (let d = 1; d <= roomConf.totalDesks; d++) {
       const cur = roomAssignments[d];
       const plan = plannedAssignments[d];
 
       if (plan) {
         if (cur && cur.idLaptop && cur.pemilikLaptop && cur.pemilikLaptop.toLowerCase() !== plan.laptop.pemilikLaptop.toLowerCase()) {
-          clearRekapDeskPosition(activeDate, cur.pemilikLaptop, activeSession);
+          clearRekapDeskPosition(activeDate, cur.pemilikLaptop, activeSession, true);
           const oldLap = laptopPool.find((l) => l.idLaptop === cur.idLaptop);
           if (oldLap) {
             oldLap.assignedRoom = null;
@@ -1044,12 +1045,30 @@ function getRoomBackupsStore(date, session, room) {
           replacedCount++;
         }
 
-        // Pasangkan laptop yang sesuai langsung via assignLaptopToDesk
+        // Pasangkan laptop yang sesuai langsung via assignLaptopToDesk (skip individual GAS sync)
         assignLaptopToDesk(roomName, d, plan.laptop.idLaptop, {
           isReady: plan.laptop.isReady,
           hasCharger: plan.laptop.hasCharger,
           catatan: plan.catatan,
-          silent: true
+          silent: true,
+          skipGASSync: true
+        });
+
+        batchItems.push({
+          action: "updateAssignment",
+          tanggal: activeDate,
+          sesi: activeSession,
+          room: roomName,
+          deskNo: d,
+          idLaptop: plan.laptop.idLaptop,
+          labelLaptop: plan.laptop.labelLaptop || "",
+          pemilikLaptop: plan.laptop.pemilikLaptop || "",
+          isReady: Boolean(plan.laptop.isReady),
+          hasCharger: Boolean(plan.laptop.hasCharger),
+          catatan: plan.catatan || "",
+          isUnassign: false,
+          unassignPemilik: "",
+          unassignIdLaptop: ""
         });
       } else {
         // Jika meja tidak memperoleh laptop pemilik maupun pinjaman dari meja yang sama,
@@ -1058,10 +1077,32 @@ function getRoomBackupsStore(date, session, room) {
           const isStudentLaptop = cur.idLaptop.startsWith("LP-");
           const isInvalidStudent = isStudentLaptop && (!studentMap[cur.pemilikLaptop?.toLowerCase()]?.isPresent || claimedLaptopIds.has(cur.idLaptop.toLowerCase()) || cur.isReady === false);
           if (isInvalidStudent) {
-            unassignLaptopFromDesk(roomName, d, true);
+            unassignLaptopFromDesk(roomName, d, true, true);
+            batchItems.push({
+              action: "updateAssignment",
+              tanggal: activeDate,
+              sesi: activeSession,
+              room: roomName,
+              deskNo: d,
+              idLaptop: "",
+              labelLaptop: "",
+              pemilikLaptop: "",
+              isReady: false,
+              hasCharger: false,
+              catatan: "",
+              isUnassign: true,
+              unassignPemilik: cur.pemilikLaptop || "",
+              unassignIdLaptop: cur.idLaptop || ""
+            });
           }
         }
       }
+    }
+
+    if (batchItems.length > 0) {
+      batchItems.forEach((b) => offlineQueue.push(b));
+      saveOfflineQueue();
+      flushOfflineQueue();
     }
 
     renderActiveRoom();
@@ -1106,6 +1147,7 @@ function getRoomBackupsStore(date, session, room) {
       return;
     }
 
+    const batchItems = [];
     assignedDesks.forEach((deskNo) => {
       const assignment = roomAssignments[deskNo];
       const idLaptop = assignment.idLaptop;
@@ -1121,16 +1163,38 @@ function getRoomBackupsStore(date, session, room) {
       }
 
       if (pemilik) {
-        clearRekapDeskPosition(activeDate, pemilik, activeSession);
+        clearRekapDeskPosition(activeDate, pemilik, activeSession, true);
       }
 
-      // Sinkronisasi ke Google Apps Script
-      syncAssignmentToGAS(activeDate, activeSession, roomName, deskNo, true, pemilik, idLaptop);
+      batchItems.push({
+        action: "updateAssignment",
+        tanggal: activeDate,
+        sesi: activeSession,
+        room: roomName,
+        deskNo: deskNo,
+        idLaptop: "",
+        labelLaptop: "",
+        pemilikLaptop: "",
+        isReady: false,
+        hasCharger: false,
+        catatan: "",
+        isUnassign: true,
+        unassignPemilik: pemilik || "",
+        unassignIdLaptop: idLaptop || ""
+      });
     });
 
     saveAssignments();
     saveLaptopPool();
     saveRekapLaptopsByDate();
+
+    // Kirim seluruh meja yang dikosongkan sekaligus via batch
+    if (batchItems.length > 0) {
+      batchItems.forEach((b) => offlineQueue.push(b));
+      saveOfflineQueue();
+      flushOfflineQueue();
+    }
+
     renderActiveRoom();
     renderLaptopPool();
     if (currentTab === "tabel-laptop") renderRekapLaptopTable();
@@ -1259,6 +1323,7 @@ function getRoomBackupsStore(date, session, room) {
     const targetMap = assignments[activeDate][activeSession][room];
     let copiedCount = 0;
     let clearedCount = 0;
+    const batchItems = [];
 
     for (let d = 1; d <= roomConf.totalDesks; d++) {
       const srcItem = srcAssignments[d];
@@ -1270,9 +1335,9 @@ function getRoomBackupsStore(date, session, room) {
           continue;
         }
 
-        // Jika target terisi siswa berbeda, bersihkan posisi rekap lama pemilik tersebut
+        // Jika target terisi siswa berbeda, bersihkan posisi rekap lama pemilik tersebut (skipSync = true)
         if (curTarget && curTarget.pemilikLaptop && curTarget.pemilikLaptop !== srcItem.pemilikLaptop) {
-          clearRekapDeskPosition(activeDate, curTarget.pemilikLaptop, activeSession);
+          clearRekapDeskPosition(activeDate, curTarget.pemilikLaptop, activeSession, true);
         }
 
         targetMap[d] = {
@@ -1295,17 +1360,33 @@ function getRoomBackupsStore(date, session, room) {
           updateRekapDeskPosition(activeDate, srcItem.pemilikLaptop, room, d, activeSession, {
             hasCharger: srcItem.hasCharger,
             isReady: srcItem.isReady,
-            catatan: srcItem.catatan
+            catatan: srcItem.catatan,
+            skipSync: true
           });
         }
 
-        syncAssignmentToGAS(activeDate, activeSession, room, d, false, "", "");
+        batchItems.push({
+          action: "updateAssignment",
+          tanggal: activeDate,
+          sesi: activeSession,
+          room: room,
+          deskNo: d,
+          idLaptop: srcItem.idLaptop,
+          labelLaptop: srcItem.labelLaptop || "",
+          pemilikLaptop: srcItem.pemilikLaptop || "",
+          isReady: Boolean(srcItem.isReady),
+          hasCharger: Boolean(srcItem.hasCharger),
+          catatan: srcItem.catatan || "",
+          isUnassign: false,
+          unassignPemilik: "",
+          unassignIdLaptop: ""
+        });
         copiedCount++;
       } else {
         // Meja sumber kosong
         if (isOverwrite && curTarget && curTarget.idLaptop && !curTarget.unassigned) {
           if (curTarget.pemilikLaptop) {
-            clearRekapDeskPosition(activeDate, curTarget.pemilikLaptop, activeSession);
+            clearRekapDeskPosition(activeDate, curTarget.pemilikLaptop, activeSession, true);
           }
           const oldLap = laptopPool.find((l) => l.idLaptop === curTarget.idLaptop);
           if (oldLap) {
@@ -1313,7 +1394,23 @@ function getRoomBackupsStore(date, session, room) {
             oldLap.assignedDesk = null;
           }
           targetMap[d] = { unassigned: true, lastUpdated: new Date().toISOString() };
-          syncAssignmentToGAS(activeDate, activeSession, room, d, true, curTarget.pemilikLaptop, curTarget.idLaptop);
+
+          batchItems.push({
+            action: "updateAssignment",
+            tanggal: activeDate,
+            sesi: activeSession,
+            room: room,
+            deskNo: d,
+            idLaptop: "",
+            labelLaptop: "",
+            pemilikLaptop: "",
+            isReady: false,
+            hasCharger: false,
+            catatan: "",
+            isUnassign: true,
+            unassignPemilik: curTarget.pemilikLaptop || "",
+            unassignIdLaptop: curTarget.idLaptop || ""
+          });
           clearedCount++;
         }
       }
@@ -1322,6 +1419,14 @@ function getRoomBackupsStore(date, session, room) {
     saveAssignments();
     saveLaptopPool();
     saveRekapLaptopsByDate();
+
+    // Kirim seluruh meja sekaligus dalam antrian batch agar hemat request dan tidak timeout
+    if (batchItems.length > 0) {
+      batchItems.forEach((b) => offlineQueue.push(b));
+      saveOfflineQueue();
+      flushOfflineQueue();
+    }
+
     closeCopySessionModal();
 
     renderActiveRoom();
@@ -2134,7 +2239,7 @@ function getRoomBackupsStore(date, session, room) {
         oldLap.assignedDesk = null;
       }
       if (prevDeskOccupant.pemilikLaptop) {
-        clearRekapDeskPosition(activeDate, prevDeskOccupant.pemilikLaptop, activeSession);
+        clearRekapDeskPosition(activeDate, prevDeskOccupant.pemilikLaptop, activeSession, true);
       }
     }
 
@@ -2184,11 +2289,12 @@ function getRoomBackupsStore(date, session, room) {
     laptop.hasCharger = hasCharger;
     laptop.catatan = catatan;
 
-    // Update Sesi column in Rekap for activeDate
+    // Update Sesi column in Rekap for activeDate (GAS handleUpdateAssignment updates Rekap sheet, skip individual row sync)
     updateRekapDeskPosition(activeDate, laptop.pemilikLaptop, roomName, deskNo, activeSession, {
       hasCharger,
       isReady,
-      catatan
+      catatan,
+      skipSync: true
     });
 
     saveAssignments();
@@ -2200,8 +2306,10 @@ function getRoomBackupsStore(date, session, room) {
       if (currentTab === "tabel-laptop") renderRekapLaptopTable();
     }
 
-    const forceKeberadaan = Boolean(customDetails && customDetails.forceAssignUncollected);
-    syncAssignmentToGAS(activeDate, activeSession, roomName, deskNo, false, "", "", forceKeberadaan ? true : undefined);
+    if (!customDetails || !customDetails.skipGASSync) {
+      const forceKeberadaan = Boolean(customDetails && customDetails.forceAssignUncollected);
+      syncAssignmentToGAS(activeDate, activeSession, roomName, deskNo, false, "", "", forceKeberadaan ? true : undefined);
+    }
 
     if (!customDetails || !customDetails.silent) {
       if (hasMovedRoom) {
@@ -2233,11 +2341,13 @@ function getRoomBackupsStore(date, session, room) {
     assignLaptopToDesk(roomName, deskNo, bItem.idLaptop, {
       isReady: customDetails ? customDetails.isReady : bItem.isReady,
       hasCharger: customDetails ? customDetails.hasCharger : bItem.hasCharger,
-      catatan: customDetails ? customDetails.catatan : (bItem.catatan || "")
+      catatan: customDetails ? customDetails.catatan : (bItem.catatan || ""),
+      silent: customDetails ? customDetails.silent : false,
+      skipGASSync: customDetails ? customDetails.skipGASSync : false
     });
   }
 
-  function unassignLaptopFromDesk(roomName, deskNo, silent = false) {
+  function unassignLaptopFromDesk(roomName, deskNo, silent = false, skipGASSync = false) {
     const roomAssignments = getEffectiveRoomAssignments(activeDate, activeSession, roomName);
     if (!roomAssignments || !roomAssignments[deskNo]) return;
 
@@ -2256,7 +2366,7 @@ function getRoomBackupsStore(date, session, room) {
 
     // Clear desk position for this session in rekap
     if (pemilik) {
-      clearRekapDeskPosition(activeDate, pemilik, activeSession);
+      clearRekapDeskPosition(activeDate, pemilik, activeSession, true);
     }
 
     saveAssignments();
@@ -2267,7 +2377,9 @@ function getRoomBackupsStore(date, session, room) {
       if (currentTab === "tabel-laptop") renderRekapLaptopTable();
     }
 
-    syncAssignmentToGAS(activeDate, activeSession, roomName, deskNo, true, pemilik, idLaptop);
+    if (!skipGASSync) {
+      syncAssignmentToGAS(activeDate, activeSession, roomName, deskNo, true, pemilik, idLaptop);
+    }
     if (!silent) {
       showToast(`Laptop ${idLaptop || "meja"} dilepas dari Meja ${deskNo}`, "info");
     }
@@ -2591,10 +2703,12 @@ function getRoomBackupsStore(date, session, room) {
     }
 
     saveRekapLaptopsByDate();
-    syncRekapRowToGAS(date, item);
+    if (!details.skipSync) {
+      syncRekapRowToGAS(date, item);
+    }
   }
 
-  function clearRekapDeskPosition(date, ownerName, session) {
+  function clearRekapDeskPosition(date, ownerName, session, skipSync = false) {
     const list = rekapLaptopsByDate[date] || [];
     let item = list.find((r) => r.nama === ownerName);
     if (!item) return;
@@ -2604,7 +2718,9 @@ function getRoomBackupsStore(date, session, room) {
     else if (session === "Sesi 3") item.sesi3 = "-";
 
     saveRekapLaptopsByDate();
-    syncRekapRowToGAS(date, item);
+    if (!skipSync) {
+      syncRekapRowToGAS(date, item);
+    }
   }
 
   // --- GAS SYNC PIPELINE ---
@@ -2706,7 +2822,7 @@ function getRoomBackupsStore(date, session, room) {
         }
 
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 12000);
+        const timeoutId = setTimeout(() => controller.abort(), 45000); // 45s untuk memberi waktu lock & batch GAS
         let res, text, json = null;
 
         try {
@@ -2807,7 +2923,7 @@ function getRoomBackupsStore(date, session, room) {
     isPolling = true;
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
     try {
       const url = `${gasUrl}?action=getSyncState&tanggal=${encodeURIComponent(activeDate)}&sesi=all&_t=${Date.now()}`;
       const res = await fetch(url, { signal: controller.signal });
