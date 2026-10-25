@@ -87,7 +87,7 @@
 
   // --- LOCAL STATE LOADING & AUTO SEEDING ---
   const CACHE_VERSION_KEY = "tka_cache_version";
-  const CURRENT_CACHE_VERSION = "20261025_015";
+  const CURRENT_CACHE_VERSION = "20261025_016";
 
   function loadLocalState() {
     const savedVersion = localStorage.getItem(CACHE_VERSION_KEY);
@@ -339,10 +339,11 @@ function getRoomBackupsStore(date, session, room) {
     return buildLaptopPoolFromRekap();
   }
 
-  // --- CASCADING AUTO-COPY & INHERITANCE ENGINE ---
+  // --- DESK ASSIGNMENTS RESOLUTION ---
   /**
-   * Resolves desk assignments for (date, session, room)
-   * If current session is empty, auto-copies from previous session or previous day!
+   * Resolves desk assignments for (date, session, room).
+   * Reconciles unset desks strictly against the verified rekap data of the specified date and session.
+   * No automatic cross-session or cross-date inheritance is performed.
    */
   function getEffectiveRoomAssignments(date, session, room) {
     if (!assignments[date]) assignments[date] = {};
@@ -351,75 +352,23 @@ function getRoomBackupsStore(date, session, room) {
 
     const currentRoomMap = assignments[date][session][room];
 
-    // If this room session has already been initialized, return it
-    if (currentRoomMap._initialized) {
-      return currentRoomMap;
-    }
-
-    // Otherwise, check for predecessor state to inherit/auto-copy
-    let predecessorState = null;
-
-    if (session === "Sesi 2") {
-      predecessorState = assignments[date]["Sesi 1"] && assignments[date]["Sesi 1"][room];
-    } else if (session === "Sesi 3") {
-      predecessorState = (assignments[date]["Sesi 2"] && assignments[date]["Sesi 2"][room]) ||
-                         (assignments[date]["Sesi 1"] && assignments[date]["Sesi 1"][room]);
-    } else if (session === "Sesi 1") {
-      const dateIdx = TKA_DATES.findIndex((d) => d.id === date);
-      if (dateIdx > 0) {
-        const prevDate = TKA_DATES[dateIdx - 1].id;
-        if (assignments[prevDate]) {
-          predecessorState = (assignments[prevDate]["Sesi 3"] && assignments[prevDate]["Sesi 3"][room]) ||
-                             (assignments[prevDate]["Sesi 2"] && assignments[prevDate]["Sesi 2"][room]) ||
-                             (assignments[prevDate]["Sesi 1"] && assignments[prevDate]["Sesi 1"][room]);
-        }
-      }
-    }
-
-    // Merge predecessor desks into current session for desks not already explicitly set
-    if (predecessorState) {
-      Object.keys(predecessorState).forEach((key) => {
-        if (key !== "_initialized" && currentRoomMap[key] === undefined) {
-          const predItem = predecessorState[key];
-          if (predItem && predItem.idLaptop && !predItem.unassigned) {
-            currentRoomMap[key] = JSON.parse(JSON.stringify(predItem));
-          }
-        }
-      });
-    }
-
-    // Reconcile remaining unset desks from verified rekap table (cross-device fallback)
+    // Reconcile remaining unset desks from verified rekap table of THIS date and session only
     const rCode = room === "Ruang Guru" ? "Ruang Guru" : room.replace("Ruang ", "R");
     const sesKey = session === "Sesi 1" ? "sesi1" : (session === "Sesi 2" ? "sesi2" : "sesi3");
     const dateList = rekapLaptopsByDate[date] || [];
     const roomConf = ROOMS_DATA[room];
     const totalDesks = roomConf ? roomConf.totalDesks : 0;
 
+    let hasNewReconciled = false;
     for (let d = 1; d <= totalDesks; d++) {
       if (currentRoomMap[d] === undefined) {
-        let student = dateList.find((r) => {
+        const student = dateList.find((r) => {
           const rl = String(r.ruangLaptop || "").trim().toUpperCase();
           const matchRoom = rl === rCode.toUpperCase() || rl === room.toUpperCase();
           const deskMatch = String(r[sesKey] || "").trim().toLowerCase() === `meja ${d}`;
           const isPresent = r.keberadaan === true || String(r.keberadaan || "").trim().toUpperCase() === "TRUE";
           return matchRoom && deskMatch && isPresent;
         });
-
-        // Fallback to previous day if current day rekap has not yet assigned this desk
-        if (!student) {
-          const dateIdx = TKA_DATES.findIndex((t) => t.id === date);
-          if (dateIdx > 0) {
-            const prevDate = TKA_DATES[dateIdx - 1].id;
-            const prevDateList = rekapLaptopsByDate[prevDate] || [];
-            student = prevDateList.find((r) => {
-              const rl = String(r.ruangLaptop || "").trim().toUpperCase();
-              const matchRoom = rl === rCode.toUpperCase() || rl === room.toUpperCase();
-              const deskMatch = String(r[sesKey] || r.sesi1 || "").trim().toLowerCase() === `meja ${d}`;
-              const isPresent = r.keberadaan === true || String(r.keberadaan || "").trim().toUpperCase() === "TRUE";
-              return matchRoom && deskMatch && isPresent;
-            });
-          }
-        }
 
         if (student) {
           currentRoomMap[d] = {
@@ -431,12 +380,14 @@ function getRoomBackupsStore(date, session, room) {
             catatan: student.keterangan || "",
             lastUpdated: new Date().toISOString()
           };
+          hasNewReconciled = true;
         }
       }
     }
 
-    currentRoomMap._initialized = true;
-    saveAssignments();
+    if (hasNewReconciled) {
+      saveAssignments();
+    }
     return currentRoomMap;
   }
 
@@ -637,6 +588,10 @@ function getRoomBackupsStore(date, session, room) {
     const btnAutoPlot = document.getElementById("btn-auto-plot");
     if (btnAutoPlot) {
       btnAutoPlot.style.display = roomConf.isBackupCenter ? "none" : "inline-flex";
+    }
+    const btnCopySession = document.getElementById("btn-copy-session");
+    if (btnCopySession) {
+      btnCopySession.style.display = roomConf.isBackupCenter ? "none" : "inline-flex";
     }
     const btnClearDesks = document.getElementById("btn-clear-room-desks");
     if (btnClearDesks) {
@@ -1181,6 +1136,209 @@ function getRoomBackupsStore(date, session, room) {
     if (currentTab === "tabel-laptop") renderRekapLaptopTable();
 
     showToast(`${assignedDesks.length} meja di ${roomName} berhasil dikosongkan. Seluruh laptop telah menjadi cadangan.`, "success");
+  }
+
+  // --- SALIN POSISI SESI / MULTI-HARI ---
+  function openCopySessionModal() {
+    const modal = document.getElementById("modal-copy-session");
+    if (!modal) return;
+
+    const roomConf = ROOMS_DATA[activeRoom];
+    if (!roomConf || roomConf.isBackupCenter) {
+      showToast("Ruangan ini tidak memiliki denah meja untuk disalin.", "info");
+      return;
+    }
+
+    document.getElementById("copy-target-room").textContent = activeRoom;
+    document.getElementById("copy-target-desc").textContent = `${activeDate} • ${activeSession}`;
+
+    // Isi dropdown tanggal sumber
+    const dateSelect = document.getElementById("copy-source-date");
+    dateSelect.innerHTML = "";
+    TKA_DATES.forEach((d) => {
+      const opt = document.createElement("option");
+      opt.value = d.id;
+      opt.textContent = `${d.label} (${d.fullDate})`;
+      dateSelect.appendChild(opt);
+    });
+
+    // Default cerdas untuk sumber
+    let defDate = activeDate;
+    let defSession = "Sesi 1";
+    if (activeSession === "Sesi 2") {
+      defDate = activeDate;
+      defSession = "Sesi 1";
+    } else if (activeSession === "Sesi 3") {
+      defDate = activeDate;
+      defSession = "Sesi 2";
+    } else if (activeSession === "Sesi 1") {
+      const idx = TKA_DATES.findIndex((d) => d.id === activeDate);
+      if (idx > 0) {
+        defDate = TKA_DATES[idx - 1].id;
+        defSession = "Sesi 1";
+      } else {
+        defDate = activeDate;
+        defSession = "Sesi 2";
+      }
+    }
+
+    dateSelect.value = defDate;
+    document.getElementById("copy-source-session").value = defSession;
+
+    updateCopySessionPreview();
+    modal.classList.remove("hidden");
+    refreshIcons();
+  }
+
+  function closeCopySessionModal() {
+    const modal = document.getElementById("modal-copy-session");
+    if (modal) modal.classList.add("hidden");
+  }
+
+  function updateCopySessionPreview() {
+    const srcDate = document.getElementById("copy-source-date").value;
+    const srcSession = document.getElementById("copy-source-session").value;
+    const previewEl = document.getElementById("copy-preview-info");
+    const confirmBtn = document.getElementById("btn-confirm-copy-session");
+    if (!previewEl || !confirmBtn) return;
+
+    if (srcDate === activeDate && srcSession === activeSession) {
+      previewEl.className = "p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-800 flex items-center gap-2";
+      previewEl.innerHTML = `<i data-lucide="alert-triangle" class="w-4 h-4 text-amber-600 shrink-0"></i><span>Hari dan sesi sumber sama dengan target aktif (${activeDate} ${activeSession}). Silakan pilih hari atau sesi berbeda.</span>`;
+      confirmBtn.disabled = true;
+      confirmBtn.classList.add("opacity-50", "cursor-not-allowed");
+      refreshIcons();
+      return;
+    }
+
+    const srcAssignments = getEffectiveRoomAssignments(srcDate, srcSession, activeRoom);
+    const roomConf = ROOMS_DATA[activeRoom];
+    let count = 0;
+    if (roomConf && srcAssignments) {
+      for (let d = 1; d <= roomConf.totalDesks; d++) {
+        const a = srcAssignments[d];
+        if (a && a.idLaptop && !a.unassigned) {
+          count++;
+        }
+      }
+    }
+
+    if (count === 0) {
+      previewEl.className = "p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-800 flex items-center gap-2";
+      previewEl.innerHTML = `<i data-lucide="info" class="w-4 h-4 text-amber-600 shrink-0"></i><span>Tidak ada laptop terpasang di <strong>${esc(activeRoom)}</strong> pada <strong>${esc(srcDate)} (${esc(srcSession)})</strong>.</span>`;
+      confirmBtn.disabled = true;
+      confirmBtn.classList.add("opacity-50", "cursor-not-allowed");
+    } else {
+      previewEl.className = "p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 flex items-center gap-2";
+      previewEl.innerHTML = `<i data-lucide="check-circle" class="w-4 h-4 text-emerald-600 shrink-0"></i><span>Ditemukan <strong>${count} meja terisi</strong> di ${esc(activeRoom)} (${esc(srcDate)} • ${esc(srcSession)}). Siap disalin ke ${esc(activeDate)} (${esc(activeSession)}).</span>`;
+      confirmBtn.disabled = false;
+      confirmBtn.classList.remove("opacity-50", "cursor-not-allowed");
+    }
+    refreshIcons();
+  }
+
+  function applyCopySession() {
+    const srcDate = document.getElementById("copy-source-date").value;
+    const srcSession = document.getElementById("copy-source-session").value;
+    const isOverwrite = document.getElementById("copy-mode-overwrite").checked;
+
+    if (srcDate === activeDate && srcSession === activeSession) {
+      showToast("Sumber dan target tidak boleh sama.", "warning");
+      return;
+    }
+
+    const room = activeRoom;
+    const roomConf = ROOMS_DATA[room];
+    if (!roomConf || roomConf.isBackupCenter) return;
+
+    const srcAssignments = getEffectiveRoomAssignments(srcDate, srcSession, room);
+    if (!assignments[activeDate]) assignments[activeDate] = {};
+    if (!assignments[activeDate][activeSession]) assignments[activeDate][activeSession] = {};
+    if (!assignments[activeDate][activeSession][room]) assignments[activeDate][activeSession][room] = {};
+
+    const targetMap = assignments[activeDate][activeSession][room];
+    let copiedCount = 0;
+    let clearedCount = 0;
+
+    for (let d = 1; d <= roomConf.totalDesks; d++) {
+      const srcItem = srcAssignments[d];
+      const curTarget = targetMap[d];
+
+      if (srcItem && srcItem.idLaptop && !srcItem.unassigned) {
+        if (!isOverwrite && curTarget && curTarget.idLaptop && !curTarget.unassigned) {
+          // Meja target sudah terisi dan user memilih jangan menimpa
+          continue;
+        }
+
+        // Jika target terisi siswa berbeda, bersihkan posisi rekap lama pemilik tersebut
+        if (curTarget && curTarget.pemilikLaptop && curTarget.pemilikLaptop !== srcItem.pemilikLaptop) {
+          clearRekapDeskPosition(activeDate, curTarget.pemilikLaptop, activeSession);
+        }
+
+        targetMap[d] = {
+          idLaptop: srcItem.idLaptop,
+          labelLaptop: srcItem.labelLaptop,
+          pemilikLaptop: srcItem.pemilikLaptop,
+          isReady: srcItem.isReady,
+          hasCharger: srcItem.hasCharger,
+          catatan: srcItem.catatan || "",
+          lastUpdated: new Date().toISOString()
+        };
+
+        const targetLap = laptopPool.find((l) => l.idLaptop === srcItem.idLaptop);
+        if (targetLap) {
+          targetLap.assignedRoom = room;
+          targetLap.assignedDesk = d;
+        }
+
+        if (srcItem.pemilikLaptop) {
+          updateRekapDeskPosition(activeDate, srcItem.pemilikLaptop, room, d, activeSession, {
+            hasCharger: srcItem.hasCharger,
+            isReady: srcItem.isReady,
+            catatan: srcItem.catatan
+          });
+        }
+
+        syncAssignmentToGAS(activeDate, activeSession, room, d, false, "", "");
+        copiedCount++;
+      } else {
+        // Meja sumber kosong
+        if (isOverwrite && curTarget && curTarget.idLaptop && !curTarget.unassigned) {
+          if (curTarget.pemilikLaptop) {
+            clearRekapDeskPosition(activeDate, curTarget.pemilikLaptop, activeSession);
+          }
+          const oldLap = laptopPool.find((l) => l.idLaptop === curTarget.idLaptop);
+          if (oldLap) {
+            oldLap.assignedRoom = null;
+            oldLap.assignedDesk = null;
+          }
+          targetMap[d] = { unassigned: true, lastUpdated: new Date().toISOString() };
+          syncAssignmentToGAS(activeDate, activeSession, room, d, true, curTarget.pemilikLaptop, curTarget.idLaptop);
+          clearedCount++;
+        }
+      }
+    }
+
+    saveAssignments();
+    saveLaptopPool();
+    saveRekapLaptopsByDate();
+    closeCopySessionModal();
+
+    renderActiveRoom();
+    renderRoomBackups(room);
+    renderLaptopPool();
+    if (currentTab === "tabel-laptop") renderRekapLaptopTable();
+    if (currentTab === "rekap") renderRekapOverview();
+
+    if (copiedCount > 0) {
+      let msg = `Berhasil menyalin posisi ${copiedCount} meja dari ${srcDate} (${srcSession}) ke ${activeDate} (${activeSession}) di ${room}!`;
+      if (clearedCount > 0) {
+        msg += ` (${clearedCount} meja dikosongkan)`;
+      }
+      showToast(msg, "success");
+    } else {
+      showToast(`Tidak ada meja yang disalin.`, "info");
+    }
   }
 
   function renderRuangGuruWorkspace() {
@@ -2426,12 +2584,8 @@ function getRoomBackupsStore(date, session, room) {
 
     if (session === "Sesi 1") {
       item.sesi1 = deskText;
-      // Propagate forward if subsequent sessions are unassigned
-      if (!item.sesi2 || item.sesi2 === "-") item.sesi2 = deskText;
-      if (!item.sesi3 || item.sesi3 === "-") item.sesi3 = deskText;
     } else if (session === "Sesi 2") {
       item.sesi2 = deskText;
-      if (!item.sesi3 || item.sesi3 === "-") item.sesi3 = deskText;
     } else if (session === "Sesi 3") {
       item.sesi3 = deskText;
     }
@@ -3510,6 +3664,38 @@ function getRoomBackupsStore(date, session, room) {
       btnAutoPlot.addEventListener("click", () => {
         autoPlotRoomDesks(activeRoom);
       });
+    }
+
+    const btnCopySession = document.getElementById("btn-copy-session");
+    if (btnCopySession) {
+      btnCopySession.addEventListener("click", () => {
+        openCopySessionModal();
+      });
+    }
+
+    const btnCloseCopyModal = document.getElementById("modal-copy-session-close");
+    if (btnCloseCopyModal) {
+      btnCloseCopyModal.addEventListener("click", closeCopySessionModal);
+    }
+
+    const btnCancelCopyModal = document.getElementById("modal-copy-session-cancel");
+    if (btnCancelCopyModal) {
+      btnCancelCopyModal.addEventListener("click", closeCopySessionModal);
+    }
+
+    const selectCopySrcDate = document.getElementById("copy-source-date");
+    if (selectCopySrcDate) {
+      selectCopySrcDate.addEventListener("change", updateCopySessionPreview);
+    }
+
+    const selectCopySrcSession = document.getElementById("copy-source-session");
+    if (selectCopySrcSession) {
+      selectCopySrcSession.addEventListener("change", updateCopySessionPreview);
+    }
+
+    const btnConfirmCopy = document.getElementById("btn-confirm-copy-session");
+    if (btnConfirmCopy) {
+      btnConfirmCopy.addEventListener("click", applyCopySession);
     }
 
     const btnClearDesks = document.getElementById("btn-clear-room-desks");
