@@ -644,6 +644,7 @@ function getRoomBackupsStore(date, session, room) {
     gridEl.style.maxWidth = `${numCols * 170}px`;
 
     const roomAssignments = getEffectiveRoomAssignments(activeDate, activeSession, roomConf.name);
+    let emptyDeskCount = 0;
 
     grid.forEach((row) => {
       row.forEach((deskNo) => {
@@ -654,6 +655,14 @@ function getRoomBackupsStore(date, session, room) {
           return;
         }
 
+        const a = roomAssignments && roomAssignments[deskNo];
+        const isOccupied = a && a.idLaptop && !a.unassigned;
+        if (!isOccupied) {
+          emptyDeskCount++;
+        }
+
+        if (deskViewFilter === "empty-only" && isOccupied) return;
+
         const deskCard = createDeskCard(roomConf.name, deskNo, roomAssignments);
         gridEl.appendChild(deskCard);
       });
@@ -661,6 +670,11 @@ function getRoomBackupsStore(date, session, room) {
 
     container.appendChild(gridEl);
     container.scrollLeft = 0;
+
+    const badgeEmpty = document.getElementById("badge-empty-desk-count");
+    if (badgeEmpty) {
+      badgeEmpty.textContent = emptyDeskCount;
+    }
   }
 
   function createDeskCard(roomName, deskNo, roomAssignments) {
