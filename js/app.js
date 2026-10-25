@@ -87,7 +87,7 @@
 
   // --- LOCAL STATE LOADING & AUTO SEEDING ---
   const CACHE_VERSION_KEY = "tka_cache_version";
-  const CURRENT_CACHE_VERSION = "20261025_014";
+  const CURRENT_CACHE_VERSION = "20261025_015";
 
   function loadLocalState() {
     const savedVersion = localStorage.getItem(CACHE_VERSION_KEY);
@@ -283,20 +283,35 @@ function getRoomBackupsStore(date, session, room) {
   }
 
   function syncLaptopPoolFromRekap() {
-    const existingIds = new Set(laptopPool.map((l) => String(l.idLaptop).toLowerCase()));
-    const existingOwners = new Set(laptopPool.map((l) => String(l.pemilikLaptop || "").trim().toLowerCase()));
     const dateList = rekapLaptopsByDate[activeDate] || [];
-    let added = false;
+    let changed = false;
 
     dateList.forEach((r, idx) => {
       const nama = String(r.nama || r.NAMA || "").trim();
-      if (!nama || existingOwners.has(nama.toLowerCase())) return;
+      if (!nama) return;
       const nis = String(r.nis || r.NIS || idx + 1).trim();
       const idLap = `LP-${nis}`;
-      if (existingIds.has(idLap.toLowerCase())) return;
+      const rLaptopRaw = String(r.ruangLaptop || r["RUANG LAPTOP"] || "").trim();
+      const rKelasRaw = String(r.ruangKelas || r["RUANG KELAS"] || "").trim();
+      const rLaptop = rLaptopRaw ? normalizeRoomCode(rLaptopRaw) : (rKelasRaw ? normalizeRoomCode(rKelasRaw) : "R1");
+      const rKelas = rKelasRaw || rLaptop;
 
-      existingOwners.add(nama.toLowerCase());
-      existingIds.add(idLap.toLowerCase());
+      const existing = laptopPool.find((l) => 
+        (l.idLaptop && l.idLaptop.toLowerCase() === idLap.toLowerCase()) ||
+        (l.pemilikLaptop && l.pemilikLaptop.toLowerCase() === nama.toLowerCase())
+      );
+
+      if (existing) {
+        if (!existing.assignedRoom && existing.ruangLaptop !== rLaptop) {
+          existing.ruangLaptop = rLaptop;
+          changed = true;
+        }
+        if (existing.ruangKelas !== rKelas) {
+          existing.ruangKelas = rKelas;
+          changed = true;
+        }
+        return;
+      }
 
       laptopPool.push({
         idLaptop: idLap,
@@ -304,18 +319,18 @@ function getRoomBackupsStore(date, session, room) {
         pemilikLaptop: nama,
         nis: nis,
         kelas: r.kelas || r.KELAS || "",
-        ruangKelas: String(r.ruangKelas || r["RUANG KELAS"] || "").trim(),
-        ruangLaptop: String(r.ruangLaptop || r["RUANG LAPTOP"] || "").trim(),
+        ruangKelas: rKelas,
+        ruangLaptop: rLaptop,
         isReady: (r.laptop || r.LAPTOP) !== "TIDAK AMAN",
         hasCharger: (r.charger || r.CHARGER) === "ADA",
         catatan: r.keterangan || r.KETERANGAN || "",
         assignedRoom: null,
         assignedDesk: null
       });
-      added = true;
+      changed = true;
     });
 
-    if (added) {
+    if (changed) {
       saveLaptopPool();
     }
   }
@@ -469,13 +484,17 @@ function getRoomBackupsStore(date, session, room) {
       if (!isPresent) return; // Siswa belum mengumpulkan laptop, tidak ada di ruangan!
 
       const nama = String(r.nama || r.NAMA || "").trim();
-      const rl = String(r.ruangLaptop || r["RUANG LAPTOP"] || "").trim().toUpperCase();
-      const rk = String(r.ruangKelas || r["RUANG KELAS"] || "").trim().toUpperCase();
-      const inRoster = isStudentInRoomRoster(room, nama);
+      const rlRaw = String(r.ruangLaptop || r["RUANG LAPTOP"] || "").trim();
+      const rkRaw = String(r.ruangKelas || r["RUANG KELAS"] || "").trim();
 
-      // Laptop milik siswa berhak ada di ruangan ini jika terjadwal di roster ruangan, atau ruangLaptop/ruangKelas cocok
-      const belongsToRoom = inRoster || rl === rCode.toUpperCase() || rl === room.toUpperCase() || rk === rCode.toUpperCase();
+      // Lokasi fisik laptop HANYA ditentukan oleh ruangLaptop (bukan ruangKelas ataupun roster ujian)
+      const effectiveRuangLaptop = rlRaw ? normalizeRoomCode(rlRaw) : (rkRaw ? normalizeRoomCode(rkRaw) : "R1");
+      const targetRoomCode = normalizeRoomCode(room);
+
+      // Laptop hanya berhak masuk cadangan ruangan jika lokasi fisik laptop (ruangLaptop) sesuai dengan ruangan ini
+      const belongsToRoom = effectiveRuangLaptop.toUpperCase() === targetRoomCode.toUpperCase();
       if (!belongsToRoom) return;
+
       const nis = String(r.nis || r.NIS || "").trim();
       const idLap = `LP-${nis || nama.replace(/\s+/g, "").substring(0, 8)}`;
 
@@ -484,8 +503,8 @@ function getRoomBackupsStore(date, session, room) {
         return;
       }
 
-      const rKelas = String(r.ruangKelas || r["RUANG KELAS"] || "").trim();
-      const isCross = rKelas && rKelas.toUpperCase() !== rl;
+      const rKelas = rkRaw || effectiveRuangLaptop;
+      const isCross = rKelas && normalizeRoomCode(rKelas).toUpperCase() !== effectiveRuangLaptop.toUpperCase();
       const isReady = (r.laptop || r.LAPTOP) !== "TIDAK AMAN";
       const hasCharger = (r.charger || r.CHARGER) === "ADA";
       const catatan = r.keterangan || r.KETERANGAN || "";
@@ -510,7 +529,7 @@ function getRoomBackupsStore(date, session, room) {
         nis: nis,
         kelas: r.kelas || r.KELAS || "",
         ruangKelas: rKelas,
-        ruangLaptop: rl,
+        ruangLaptop: effectiveRuangLaptop,
         isReady: isReady,
         hasCharger: hasCharger,
         catatan: catatan,
@@ -1018,7 +1037,8 @@ function getRoomBackupsStore(date, session, room) {
       if (!studentName) continue;
 
       const pData = studentMap[studentName.toLowerCase()];
-      if (pData && pData.isPresent && pData.isReady && !claimedLaptopIds.has(pData.idLaptop.toLowerCase())) {
+      const isLaptopInThisRoom = pData && normalizeRoomCode(pData.ruangLaptop).toUpperCase() === normalizeRoomCode(roomName).toUpperCase();
+      if (pData && pData.isPresent && pData.isReady && isLaptopInThisRoom && !claimedLaptopIds.has(pData.idLaptop.toLowerCase())) {
         plannedAssignments[d] = {
           laptop: pData,
           isPrimary: true,
@@ -1029,8 +1049,8 @@ function getRoomBackupsStore(date, session, room) {
       }
     }
 
-    // TAHAP 2: Jika meja belum terisi (pemilik belum kumpul laptop / laptop rusak),
-    // pinjam laptop milik siswa sesi lain PADA NOMOR MEJA YANG SAMA! (TIDAK MENGACAK DARI MEJA LAIN)
+    // TAHAP 2: Jika meja belum terisi (pemilik belum kumpul laptop / laptop rusak / laptop berada di ruangan lain),
+    // pinjam laptop milik siswa sesi lain PADA NOMOR MEJA YANG SAMA YANG ADA DI RUANGAN INI!
     for (let d = 1; d <= roomConf.totalDesks; d++) {
       if (plannedAssignments[d]) continue; // Meja ini sudah berhasil mendapatkan laptop pemilik aslinya
 
@@ -1039,7 +1059,8 @@ function getRoomBackupsStore(date, session, room) {
         if (!candidateName) continue;
 
         const fbData = studentMap[candidateName.toLowerCase()];
-        if (fbData && fbData.isPresent && fbData.isReady && !claimedLaptopIds.has(fbData.idLaptop.toLowerCase())) {
+        const isFbInThisRoom = fbData && normalizeRoomCode(fbData.ruangLaptop).toUpperCase() === normalizeRoomCode(roomName).toUpperCase();
+        if (fbData && fbData.isPresent && fbData.isReady && isFbInThisRoom && !claimedLaptopIds.has(fbData.idLaptop.toLowerCase())) {
           plannedAssignments[d] = {
             laptop: fbData,
             isPrimary: false,
