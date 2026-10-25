@@ -540,7 +540,7 @@ function getRoomBackupsStore(date, session, room) {
       const btn = document.createElement("button");
       btn.dataset.date = d.id;
       const isActive = d.id === activeDate;
-      btn.className = `date-btn px-2.5 py-1 rounded-lg font-semibold text-xs transition ${
+      btn.className = `date-btn px-1.5 sm:px-2.5 py-1 rounded-lg font-semibold text-[11px] sm:text-xs truncate transition ${
         isActive ? "bg-indigo-600 text-white shadow-sm" : "text-slate-600 hover:text-slate-900"
       }`;
       btn.textContent = `${d.label}`;
@@ -3563,9 +3563,9 @@ function getRoomBackupsStore(date, session, room) {
     document.querySelectorAll(".session-btn").forEach((b) => {
       const isActive = b.dataset.session === activeSession;
       if (isActive) {
-        b.className = "session-btn flex-1 py-1.5 px-3 rounded-lg bg-indigo-600 text-white font-bold text-xs shadow-xs transition-all duration-150 flex items-center justify-center gap-1.5 cursor-pointer";
+        b.className = "session-btn flex-1 py-1.5 px-3 rounded-lg bg-indigo-600 text-white font-bold text-xs text-center shadow-xs transition-all duration-150 flex items-center justify-center gap-1.5 cursor-pointer";
       } else {
-        b.className = "session-btn flex-1 py-1.5 px-3 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 font-semibold text-xs transition-all duration-150 flex items-center justify-center gap-1.5 cursor-pointer";
+        b.className = "session-btn flex-1 py-1.5 px-3 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 font-semibold text-xs text-center transition-all duration-150 flex items-center justify-center gap-1.5 cursor-pointer";
       }
     });
   }
@@ -3584,21 +3584,24 @@ function getRoomBackupsStore(date, session, room) {
     viewTabel.classList.add("hidden");
     viewRekap.classList.add("hidden");
 
-    tabDenah.className = "tab-btn px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 transition-all flex items-center gap-1.5";
-    tabTabel.className = "tab-btn px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 transition-all flex items-center gap-1.5";
-    tabRekap.className = "tab-btn px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 transition-all flex items-center gap-1.5";
+    const nonActiveClass = "tab-btn px-2 sm:px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 transition-all flex items-center gap-1 sm:gap-1.5";
+    const activeClass = "tab-btn px-2 sm:px-3 py-1.5 rounded-lg font-semibold bg-white text-indigo-700 shadow-sm transition-all flex items-center gap-1 sm:gap-1.5";
+
+    tabDenah.className = nonActiveClass;
+    tabTabel.className = nonActiveClass;
+    tabRekap.className = nonActiveClass;
 
     if (tab === "denah") {
       viewDenah.classList.remove("hidden");
-      tabDenah.className = "tab-btn px-3 py-1.5 rounded-lg font-semibold bg-white text-indigo-700 shadow-sm transition-all flex items-center gap-1.5";
+      tabDenah.className = activeClass;
       renderActiveRoom();
     } else if (tab === "tabel-laptop") {
       viewTabel.classList.remove("hidden");
-      tabTabel.className = "tab-btn px-3 py-1.5 rounded-lg font-semibold bg-white text-indigo-700 shadow-sm transition-all flex items-center gap-1.5";
+      tabTabel.className = activeClass;
       renderRekapLaptopTable();
     } else {
       viewRekap.classList.remove("hidden");
-      tabRekap.className = "tab-btn px-3 py-1.5 rounded-lg font-semibold bg-white text-indigo-700 shadow-sm transition-all flex items-center gap-1.5";
+      tabRekap.className = activeClass;
       renderRekapOverview();
     }
     refreshIcons();
