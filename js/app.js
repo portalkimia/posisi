@@ -922,6 +922,9 @@ function getRoomBackupsStore(date, session, room) {
     const seenLapIds = new Set();
 
     dateList.forEach((r, idx) => {
+      const isPresent = r.keberadaan === true || String(r.keberadaan || r["KEBERADAAN DI RUANGAN"] || "").trim().toUpperCase() === "TRUE";
+      if (!isPresent) return; // KRUSIAL: Siswa yang belum mengumpulkan laptop (FALSE) TIDAK BOLEH diikutkan ke plot meja
+
       const rl = String(r.ruangLaptop || r["RUANG LAPTOP"] || "").trim().toUpperCase();
       if (rl !== rCode.toUpperCase() && rl !== roomName.toUpperCase()) return;
 
@@ -1887,6 +1890,16 @@ function getRoomBackupsStore(date, session, room) {
       (r.nama && idLaptop.includes(r.nama))
     );
 
+    // Hard Guard: Siswa yang belum mengumpulkan laptop (KEBERADAAN = FALSE) TIDAK BOLEH dipasang ke meja
+    if (student) {
+      const isPresent = student.keberadaan === true || String(student.keberadaan || student["KEBERADAAN DI RUANGAN"] || "").trim().toUpperCase() === "TRUE";
+      if (!isPresent && (!customDetails || !customDetails.forceAssignUncollected)) {
+        console.warn(`[assignLaptopToDesk] Laptop milik ${student.nama} belum dikumpulkan (KEBERADAAN = FALSE). Penempatan dibatalkan.`);
+        showToast(`Laptop milik ${student.nama} belum dikumpulkan siswa (Status Belum Kumpul). Tidak dapat dipasang ke meja.`, "warning");
+        return;
+      }
+    }
+
     let laptop = laptopPool.find((l) => l.idLaptop === idLaptop);
     if (!laptop && student) {
       laptop = {
@@ -2677,6 +2690,33 @@ function getRoomBackupsStore(date, session, room) {
           }));
           saveRekapLaptopsByDate();
           syncLaptopPoolFromRekap();
+
+          // Purge local desk assignments for uncollected students (KEBERADAAN = FALSE)
+          const uncollectedOwners = new Set(
+            rekapLaptopsByDate[activeDate]
+              .filter((r) => !r.keberadaan)
+              .map((r) => (r.nama || "").trim().toLowerCase())
+          );
+          if (assignments[activeDate]) {
+            Object.keys(assignments[activeDate]).forEach((sKey) => {
+              const sessMap = assignments[activeDate][sKey];
+              if (sessMap) {
+                Object.keys(sessMap).forEach((rKey) => {
+                  const rMap = sessMap[rKey];
+                  if (rMap) {
+                    Object.keys(rMap).forEach((dNo) => {
+                      const a = rMap[dNo];
+                      if (a && a.pemilikLaptop && uncollectedOwners.has(a.pemilikLaptop.trim().toLowerCase())) {
+                        delete rMap[dNo];
+                        activeRoomChanged = true;
+                      }
+                    });
+                  }
+                });
+              }
+            });
+          }
+
           renderRoomBackups(activeRoom);
           renderLaptopPool();
           if (currentTab === "tabel-laptop") renderRekapLaptopTable();
@@ -2737,37 +2777,76 @@ function getRoomBackupsStore(date, session, room) {
     document.getElementById("modal-student-s2").textContent = roster.sesi2 || "(Kosong)";
     document.getElementById("modal-student-s3").textContent = roster.sesi3 || "(Kosong)";
 
+    // Room Backups (Utamakan Cadangan Ruang Tersebut di Dropdown & Chips)
+    const backups = getEffectiveRoomBackups(activeDate, activeSession, roomName);
+
+    // Populate Quick Pick Chips for Room Backups
+    const chipsWrapper = document.getElementById("modal-room-backup-chips-wrapper");
+    const chipsContainer = document.getElementById("modal-room-backup-chips");
+    if (chipsWrapper && chipsContainer) {
+      chipsContainer.innerHTML = "";
+      if (backups.length > 0) {
+        chipsWrapper.classList.remove("hidden");
+        chipsWrapper.classList.add("flex");
+        backups.forEach((b) => {
+          const chip = document.createElement("button");
+          chip.type = "button";
+          chip.className = "px-2 py-1 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 font-bold text-[11px] transition flex items-center gap-1 cursor-pointer";
+          chip.innerHTML = `<span>${b.pemilikLaptop || b.idLaptop}</span><span class="text-[9px] text-amber-700 bg-amber-200/60 px-1 rounded">${b.idLaptop}</span>`;
+          chip.addEventListener("click", () => {
+            select.value = b.idLaptop;
+            document.getElementById("modal-safety-select").value = b.isReady ? "AMAN" : "TIDAK AMAN";
+            document.getElementById("modal-charger-select").value = b.hasCharger ? "ADA" : "TIDAK ADA";
+            document.getElementById("modal-notes-input").value = b.catatan || "";
+          });
+          chipsContainer.appendChild(chip);
+        });
+      } else {
+        chipsWrapper.classList.add("hidden");
+        chipsWrapper.classList.remove("flex");
+      }
+    }
+
     // Populate Laptop Dropdown
     const select = document.getElementById("modal-laptop-select");
     select.innerHTML = '<option value="">-- Pilih Laptop dari Pool / Cadangan --</option>';
 
-    laptopPool.forEach((laptop) => {
-      if (!laptop.assignedRoom || (laptop.assignedRoom === roomName && laptop.assignedDesk === deskNo)) {
-        const opt = document.createElement("option");
-        opt.value = laptop.idLaptop;
-        opt.textContent = `${laptop.pemilikLaptop || laptop.labelLaptop} [${laptop.idLaptop}] (${laptop.isReady ? "AMAN" : "TIDAK AMAN"})`;
-        if (assignment && assignment.idLaptop === laptop.idLaptop) opt.selected = true;
-        select.appendChild(opt);
-      }
-    });
-
-    // Room Backups in Dropdown
-    const backups = getEffectiveRoomBackups(activeDate, activeSession, roomName);
     if (backups.length > 0) {
       const optGroup = document.createElement("optgroup");
-      optGroup.label = "Laptop Cadangan Ruangan:";
+      optGroup.label = "⭐ Rekomendasi Cadangan Ruangan:";
       backups.forEach((b) => {
         const opt = document.createElement("option");
         opt.value = b.idLaptop;
-        opt.textContent = `[CADANGAN] ${b.idLaptop} - ${b.labelLaptop}`;
+        opt.textContent = `[CADANGAN ${roomName}] ${b.pemilikLaptop || b.labelLaptop} (${b.idLaptop})`;
+        if (assignment && assignment.idLaptop === b.idLaptop) opt.selected = true;
         optGroup.appendChild(opt);
       });
       select.appendChild(optGroup);
     }
 
+    const dateList = rekapLaptopsByDate[activeDate] || [];
+    const poolGroup = document.createElement("optgroup");
+    poolGroup.label = "Laptop Tersedia Lainnya:";
+    laptopPool.forEach((laptop) => {
+      if (!laptop.assignedRoom || (laptop.assignedRoom === roomName && laptop.assignedDesk === deskNo)) {
+        // Filter out uncollected students (keberadaan === FALSE)
+        const studentRec = dateList.find((r) => r.nama === laptop.pemilikLaptop || (r.nis && `LP-${r.nis}` === laptop.idLaptop));
+        const isPresent = studentRec ? (studentRec.keberadaan === true || String(studentRec.keberadaan || studentRec["KEBERADAAN DI RUANGAN"] || "").trim().toUpperCase() === "TRUE") : true;
+        if (!isPresent) return; // JANGAN tampilkan laptop yang belum dikumpulkan!
+
+        const opt = document.createElement("option");
+        opt.value = laptop.idLaptop;
+        opt.textContent = `${laptop.pemilikLaptop || laptop.labelLaptop} [${laptop.idLaptop}] (${laptop.isReady ? "AMAN" : "TIDAK AMAN"})`;
+        if (assignment && assignment.idLaptop === laptop.idLaptop) opt.selected = true;
+        poolGroup.appendChild(opt);
+      }
+    });
+    if (poolGroup.children.length > 0) {
+      select.appendChild(poolGroup);
+    }
+
     const curLaptop = assignment ? laptopPool.find((l) => l.idLaptop === assignment.idLaptop) : null;
     const ownerName = curLaptop ? curLaptop.pemilikLaptop : (roster.sesi1 || "");
-    const dateList = rekapLaptopsByDate[activeDate] || [];
     const rekapItem = dateList.find((r) => r.nama === ownerName);
 
     const rCode = roomName === "Ruang Guru" ? "Ruang Guru" : roomName.replace("Ruang ", "R");
@@ -3106,7 +3185,8 @@ function getRoomBackupsStore(date, session, room) {
         assignLaptopToDesk(selectedDeskForModal.room, selectedDeskForModal.desk, chosenLaptop, {
           isReady,
           hasCharger,
-          catatan
+          catatan,
+          forceAssignUncollected: keberadaanVal === true
         });
 
         const laptop = laptopPool.find((l) => l.idLaptop === chosenLaptop);

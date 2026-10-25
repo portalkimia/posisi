@@ -356,6 +356,28 @@ function handleUpdateAssignment(ss, payload) {
   const catatan = String(payload.catatan || payload.keterangan || "").trim();
   const isUnassign = payload.isUnassign === true || !idLaptop;
 
+  // Guard: Jika bukan unassign dan memiliki pemilik, verifikasi status keberadaan di Rekap_Persiapan
+  if (!isUnassign && pemilikLaptop) {
+    const sPersiapan = ss.getSheetByName("Rekap_Persiapan");
+    if (sPersiapan) {
+      const pData = getSheetDataAsObjects(sPersiapan);
+      const pStudent = pData.find(function(p) {
+        return String(p.NAMA || "").trim().toLowerCase() === pemilikLaptop.trim().toLowerCase();
+      });
+      if (pStudent) {
+        const isPresInP = String(pStudent["KEBERADAAN DI RUANGAN"] || "").trim().toUpperCase() === "TRUE";
+        const isExplicitPres = payload.keberadaan === true || payload.keberadaan === "true" || payload.keberadaan === 1;
+        if (!isPresInP && !isExplicitPres) {
+          return {
+            success: false,
+            error: "Siswa belum mengumpulkan laptop (KEBERADAAN DI RUANGAN = FALSE di Rekap_Persiapan)",
+            rejectedOwner: pemilikLaptop
+          };
+        }
+      }
+    }
+  }
+
   // 1. Find existing row(s) in Data_Ruangan (with automatic duplicate detection)
   const values = sheetRooms.getDataRange().getDisplayValues();
   let targetRow = -1;
@@ -420,10 +442,15 @@ function handleUpdateAssignment(ss, payload) {
       tanggal: tanggal,
       nama: targetPemilik,
       ruangLaptop: rCode, // Tetap berada di ruangan ini (sebagai cadangan ruangan)
-      keberadaan: true,
       charger: hasCharger ? "ADA" : "TIDAK ADA",
       laptopStatus: isReady ? "AMAN" : "TIDAK AMAN"
     };
+
+    if (payload.keberadaan !== undefined) {
+      rekapUpdate.keberadaan = payload.keberadaan === true || payload.keberadaan === "true" || payload.keberadaan === 1;
+    } else if (!isUnassign) {
+      rekapUpdate.keberadaan = true;
+    }
 
     if (catatan) {
       rekapUpdate.keterangan = catatan;
@@ -608,7 +635,7 @@ function cleanDataRuanganUncollected(ss) {
   const roomsData = getSheetDataAsObjects(sRooms);
   for (let i = roomsData.length - 1; i >= 0; i--) {
     const row = roomsData[i];
-    const owner = String(row.PemilikLaptop || "").trim().toLowerCase();
+    const owner = String(row.PemilikLaptop || row.NamaPeserta || "").trim().toLowerCase();
     if (uncollectedOwners.has(owner)) {
       sRooms.deleteRow(i + 2); // 1-based, +1 header
     }
@@ -957,6 +984,8 @@ function cleanDataRuanganDuplicates(ss) {
   rowsToDelete.forEach(function (rNum) {
     sRooms.deleteRow(rNum);
   });
+
+  cleanDataRuanganUncollected(ss);
 
   SpreadsheetApp.flush();
   return { success: true, removedCount: rowsToDelete.length };
