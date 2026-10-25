@@ -1749,20 +1749,23 @@ function getRoomBackupsStore(date, session, room) {
     Object.assign(item, changes);
     saveRekapLaptopsByDate();
 
-    // Cross-sync to current active desk if matches
+    // Cross-sync to all session desks if matches
     const rName = item.ruangLaptop === "Ruang Guru" ? "Ruang Guru" : item.ruangLaptop.replace("R", "Ruang ");
-    const roomAssignments = assignments[date] && assignments[date][activeSession] && assignments[date][activeSession][rName];
-    if (roomAssignments) {
+    ["Sesi 1", "Sesi 2", "Sesi 3"].forEach((ses) => {
+      const sessMap = assignments[date] && assignments[date][ses];
+      if (!sessMap || !sessMap[rName]) return;
+      const roomAssignments = sessMap[rName];
       Object.values(roomAssignments).forEach((a) => {
         if (a && a.pemilikLaptop === item.nama) {
           if (changes.charger !== undefined) a.hasCharger = changes.charger === "ADA";
           if (changes.laptop !== undefined) a.isReady = changes.laptop === "AMAN";
           if (changes.keterangan !== undefined) a.catatan = changes.keterangan;
+          a.lastUpdated = new Date().toISOString();
         }
       });
-      saveAssignments();
-      renderActiveRoom();
-    }
+    });
+    saveAssignments();
+    if (currentTab === "denah") renderActiveRoom();
 
     syncRekapRowToGAS(date, item);
     showToast(`Data ${item.nama} diperbarui`, "success");
