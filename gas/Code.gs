@@ -212,16 +212,19 @@ function doPost(e) {
 
     // Flush pending changes to sheet before releasing lock!
     SpreadsheetApp.flush();
+    _persiapanCache = null;   // invalidate agar request berikutnya fresh
 
     return ContentService.createTextOutput(JSON.stringify(response))
       .setMimeType(ContentService.MimeType.JSON);
   } catch (err) {
+    _persiapanCache = null;
     return ContentService.createTextOutput(JSON.stringify({
       success: false,
       error: "Lock or Execution Error: " + err.toString(),
       retryable: true
     })).setMimeType(ContentService.MimeType.JSON);
   } finally {
+    _persiapanCache = null;
     try {
       lock.releaseLock();
     } catch (ignore) {}
@@ -335,6 +338,7 @@ function handleBatchUpdateAssignments(ss, payload) {
     const item = items[i];
     results.push(handleUpdateAssignment(ss, item));
   }
+  _persiapanCache = null;
   const failed = results.filter(function(r) { return !r || r.success === false; });
   const succeeded = results.length - failed.length;
   SpreadsheetApp.flush();
@@ -351,6 +355,21 @@ function handleBatchUpdateAssignments(ss, payload) {
   }
   return { success: true, count: succeeded };
 }
+
+let _persiapanCache = null;   // { data: [], timestamp: number }
+const PERSIAPAN_CACHE_TTL = 30000; // 30 detik
+
+function getPersiapanDataCached(ss) {
+  const now = Date.now();
+  if (_persiapanCache && (now - _persiapanCache.timestamp) < PERSIAPAN_CACHE_TTL) {
+    return _persiapanCache.data;
+  }
+  const sPersiapan = ss.getSheetByName("Rekap_Persiapan");
+  const data = sPersiapan ? getSheetDataAsObjects(sPersiapan) : [];
+  _persiapanCache = { data: data, timestamp: now };
+  return data;
+}
+
 function handleUpdateAssignment(ss, payload) {
   const sheetRooms = ss.getSheetByName(SHEET_ROOMS);
   const sheetLaptops = ss.getSheetByName(SHEET_LAPTOPS);
@@ -373,7 +392,7 @@ function handleUpdateAssignment(ss, payload) {
   if (!isUnassign && pemilikLaptop) {
     const sPersiapan = ss.getSheetByName("Rekap_Persiapan");
     if (sPersiapan) {
-      const pData = getSheetDataAsObjects(sPersiapan);
+      const pData = getPersiapanDataCached(ss);
       const pStudent = pData.find(function(p) {
         return String(p.NAMA || "").trim().toLowerCase() === pemilikLaptop.trim().toLowerCase();
       });
