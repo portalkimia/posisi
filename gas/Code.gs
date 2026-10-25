@@ -374,6 +374,25 @@ function handleUpdateAssignment(ss, payload) {
             rejectedOwner: pemilikLaptop
           };
         }
+        if (isExplicitPres) {
+          const pValues = sPersiapan.getDataRange().getValues();
+          const pHeaders = pValues[0] || [];
+          let colKeberadaan = -1;
+          let colNama = 2;
+          for (let c = 0; c < pHeaders.length; c++) {
+            const h = String(pHeaders[c]).trim().toUpperCase();
+            if (h === "KEBERADAAN DI RUANGAN") colKeberadaan = c + 1;
+            if (h === "NAMA") colNama = c + 1;
+          }
+          if (colKeberadaan > 0) {
+            for (let r = 1; r < pValues.length; r++) {
+              if (String(pValues[r][colNama - 1] || "").trim().toLowerCase() === pemilikLaptop.trim().toLowerCase()) {
+                sPersiapan.getRange(r + 1, colKeberadaan).setValue("TRUE");
+                break;
+              }
+            }
+          }
+        }
       }
     }
   }

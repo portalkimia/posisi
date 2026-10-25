@@ -2011,7 +2011,8 @@ function getRoomBackupsStore(date, session, room) {
       if (currentTab === "tabel-laptop") renderRekapLaptopTable();
     }
 
-    syncAssignmentToGAS(activeDate, activeSession, roomName, deskNo);
+    const forceKeberadaan = Boolean(customDetails && customDetails.forceAssignUncollected);
+    syncAssignmentToGAS(activeDate, activeSession, roomName, deskNo, false, "", "", forceKeberadaan ? true : undefined);
 
     if (!customDetails || !customDetails.silent) {
       if (hasMovedRoom) {
@@ -2422,7 +2423,7 @@ function getRoomBackupsStore(date, session, room) {
   }
 
   // --- GAS SYNC PIPELINE ---
-  function syncAssignmentToGAS(date, session, roomName, deskNo, isUnassign = false, unassignPemilik = "", unassignIdLaptop = "") {
+  function syncAssignmentToGAS(date, session, roomName, deskNo, isUnassign = false, unassignPemilik = "", unassignIdLaptop = "", forceKeberadaan = undefined) {
     const roomAssignments = getEffectiveRoomAssignments(date, session, roomName);
     const assignment = roomAssignments && roomAssignments[deskNo];
 
@@ -2440,7 +2441,8 @@ function getRoomBackupsStore(date, session, room) {
       catatan: isUnassign ? "" : (assignment ? assignment.catatan : ""),
       isUnassign: Boolean(isUnassign),
       unassignPemilik: unassignPemilik,
-      unassignIdLaptop: unassignIdLaptop
+      unassignIdLaptop: unassignIdLaptop,
+      keberadaan: forceKeberadaan === true ? true : undefined
     };
 
     offlineQueue.push(payload);
