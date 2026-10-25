@@ -2541,6 +2541,13 @@ function getRoomBackupsStore(date, session, room) {
         }
 
         if (!res.ok || (json && json.success === false)) {
+          if (json && json.partialSuccess === true) {
+            offlineQueue.splice(0, json.succeeded || 0);
+            saveOfflineQueue();
+            updateSyncPill("offline");
+            continue; // ulangi loop untuk item gagal
+          }
+
           const errDetail = (json && json.error) || text || ("HTTP Error " + (res ? res.status : "unknown"));
           console.warn("GAS write response error:", errDetail);
 

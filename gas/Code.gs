@@ -335,8 +335,21 @@ function handleBatchUpdateAssignments(ss, payload) {
     const item = items[i];
     results.push(handleUpdateAssignment(ss, item));
   }
+  const failed = results.filter(function(r) { return !r || r.success === false; });
+  const succeeded = results.length - failed.length;
   SpreadsheetApp.flush();
-  return { success: true, count: results.length };
+  if (failed.length > 0) {
+    return {
+      success: false,
+      error: "Sebagian item gagal (" + failed.length + "/" + results.length + ")",
+      partialSuccess: true,
+      succeeded: succeeded,
+      failedCount: failed.length,
+      failedItems: failed,
+      count: succeeded
+    };
+  }
+  return { success: true, count: succeeded };
 }
 function handleUpdateAssignment(ss, payload) {
   const sheetRooms = ss.getSheetByName(SHEET_ROOMS);
