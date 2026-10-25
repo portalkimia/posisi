@@ -846,6 +846,30 @@
           </p>
         </div>
 
+        <!-- Antrian Sinkronisasi & Pemulihan -->
+        <div class="p-3.5 rounded-xl border border-slate-200 bg-slate-50 flex flex-col gap-2">
+          <div class="flex items-center justify-between gap-2">
+            <span class="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+              <i data-lucide="layers" class="w-3.5 h-3.5 text-indigo-600"></i>
+              <span>Antrian Sinkronisasi Tertunda</span>
+            </span>
+            <span id="settings-queue-badge" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-200 text-slate-700">0 Tertunda</span>
+          </div>
+          <p class="text-[11px] text-slate-500 leading-relaxed">
+            Jika jaringan sempat terputus atau backend sempat offline, klik tombol di bawah untuk mencoba kirim ulang atau membersihkan antrian lokal.
+          </p>
+          <div class="flex items-center gap-2 pt-1">
+            <button type="button" id="btn-flush-queue" class="flex-1 py-1.5 px-2 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white rounded-lg font-bold text-xs transition shadow-2xs flex items-center justify-center gap-1.5">
+              <i data-lucide="send" class="w-3 h-3"></i>
+              <span>Kirim Sekarang</span>
+            </button>
+            <button type="button" id="btn-clear-queue" class="py-1.5 px-3 bg-slate-200 hover:bg-rose-100 hover:text-rose-700 active:scale-95 text-slate-700 rounded-lg font-bold text-xs transition flex items-center justify-center gap-1.5">
+              <i data-lucide="trash-2" class="w-3 h-3"></i>
+              <span>Bersihkan</span>
+            </button>
+          </div>
+        </div>
+
         <div class="flex items-center justify-between gap-2.5 pt-3 border-t border-slate-100">
           <button type="button" id="btn-test-connection" class="px-3 py-2 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-xl font-bold transition flex items-center gap-1.5">
             <i data-lucide="activity" class="w-3.5 h-3.5"></i>
@@ -868,6 +892,6 @@
 
   <!-- LOAD STATIC DATA & APP SCRIPTS -->
   <script src="data/roomsData.js?v=20261025_004"></script>
-  <script src="js/app.js?v=20261025_012"></script>
+  <script src="js/app.js?v=20261025_013"></script>
 </body>
 </html>

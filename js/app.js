@@ -72,6 +72,7 @@
     renderLaptopPool();
     if (currentTab === "tabel-laptop") renderRekapLaptopTable();
     updateSyncPill();
+    flushOfflineQueue();
     startAutoPolling();
     pollRoomStateFromGAS();
     refreshIcons();
@@ -79,7 +80,7 @@
 
   // --- LOCAL STATE LOADING & AUTO SEEDING ---
   const CACHE_VERSION_KEY = "tka_cache_version";
-  const CURRENT_CACHE_VERSION = "20261025_010";
+  const CURRENT_CACHE_VERSION = "20261025_013";
 
   function loadLocalState() {
     const savedVersion = localStorage.getItem(CACHE_VERSION_KEY);
@@ -89,6 +90,8 @@
       localStorage.removeItem(STORAGE_KEY_ASSIGNMENTS);
       localStorage.removeItem(STORAGE_KEY_POOL);
       localStorage.removeItem(STORAGE_KEY_BACKUPS);
+      localStorage.removeItem(STORAGE_KEY_QUEUE);
+      offlineQueue = [];
       localStorage.setItem(CACHE_VERSION_KEY, CURRENT_CACHE_VERSION);
     }
 
@@ -143,6 +146,10 @@
     try {
       const storedQueue = localStorage.getItem(STORAGE_KEY_QUEUE);
       offlineQueue = storedQueue ? JSON.parse(storedQueue) : [];
+      if (!Array.isArray(offlineQueue)) offlineQueue = [];
+      // Sanitize: buang item rusak atau tanpa action
+      offlineQueue = offlineQueue.filter((item) => item && typeof item === "object" && item.action);
+      saveOfflineQueue();
     } catch (e) {
       offlineQueue = [];
     }
@@ -411,6 +418,23 @@ function getRoomBackupsStore(date, session, room) {
     return currentRoomMap;
   }
 
+  function isStudentInRoomRoster(roomName, studentName) {
+    const roomConf = ROOMS_DATA[roomName];
+    if (!roomConf || !roomConf.roster || !studentName) return false;
+    const targetName = studentName.trim().toLowerCase();
+    for (const dNo in roomConf.roster) {
+      const ros = roomConf.roster[dNo];
+      if (ros) {
+        if ((ros.sesi1 && ros.sesi1.trim().toLowerCase() === targetName) ||
+            (ros.sesi2 && ros.sesi2.trim().toLowerCase() === targetName) ||
+            (ros.sesi3 && ros.sesi3.trim().toLowerCase() === targetName)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
   function getEffectiveRoomBackups(date, session, room) {
     const rCode = room === "Ruang Guru" ? "Ruang Guru" : room.replace("Ruang ", "R");
     
@@ -437,10 +461,14 @@ function getRoomBackupsStore(date, session, room) {
       const isPresent = r.keberadaan === true || String(r.keberadaan || r["KEBERADAAN DI RUANGAN"] || "").trim().toUpperCase() === "TRUE";
       if (!isPresent) return; // Siswa belum mengumpulkan laptop, tidak ada di ruangan!
 
-      const rl = String(r.ruangLaptop || r["RUANG LAPTOP"] || "").trim().toUpperCase();
-      if (rl !== rCode.toUpperCase() && rl !== room.toUpperCase()) return;
-
       const nama = String(r.nama || r.NAMA || "").trim();
+      const rl = String(r.ruangLaptop || r["RUANG LAPTOP"] || "").trim().toUpperCase();
+      const rk = String(r.ruangKelas || r["RUANG KELAS"] || "").trim().toUpperCase();
+      const inRoster = isStudentInRoomRoster(room, nama);
+
+      // Laptop milik siswa berhak ada di ruangan ini jika terjadwal di roster ruangan, atau ruangLaptop/ruangKelas cocok
+      const belongsToRoom = inRoster || rl === rCode.toUpperCase() || rl === room.toUpperCase() || rk === rCode.toUpperCase();
+      if (!belongsToRoom) return;
       const nis = String(r.nis || r.NIS || "").trim();
       const idLap = `LP-${nis || nama.replace(/\s+/g, "").substring(0, 8)}`;
 
@@ -909,7 +937,7 @@ function getRoomBackupsStore(date, session, room) {
 
   function autoPlotRoomDesks(roomName) {
     const roomConf = ROOMS_DATA[roomName];
-    if (!roomConf || roomConf.isBackupCenter) {
+    if (!roomConf || roomConf.isBackupCenter || !roomConf.roster) {
       showToast("Ruangan ini tidak memiliki denah meja untuk diplot.", "info");
       return;
     }
@@ -917,75 +945,44 @@ function getRoomBackupsStore(date, session, room) {
     const rCode = roomName === "Ruang Guru" ? "Ruang Guru" : roomName.replace("Ruang ", "R");
     const dateList = rekapLaptopsByDate[activeDate] || [];
 
-    // 1. Kumpulkan seluruh unit laptop yang secara fisik berada di ruangan ini
-    const allLaptopsInRoom = [];
-    const seenLapIds = new Set();
-
+    // Buat index seluruh siswa yang mengumpulkan laptop (KEBERADAAN = TRUE & AMAN)
+    const studentMap = {};
     dateList.forEach((r, idx) => {
-      const isPresent = r.keberadaan === true || String(r.keberadaan || r["KEBERADAAN DI RUANGAN"] || "").trim().toUpperCase() === "TRUE";
-      if (!isPresent) return; // KRUSIAL: Siswa yang belum mengumpulkan laptop (FALSE) TIDAK BOLEH diikutkan ke plot meja
-
-      const rl = String(r.ruangLaptop || r["RUANG LAPTOP"] || "").trim().toUpperCase();
-      if (rl !== rCode.toUpperCase() && rl !== roomName.toUpperCase()) return;
-
       const nama = String(r.nama || r.NAMA || "").trim();
-      const nis = String(r.nis || r.NIS || idx + 1).trim();
-      const idLap = `LP-${nis || nama.replace(/\s+/g, "").substring(0, 8)}`;
-      if (seenLapIds.has(idLap.toLowerCase())) return;
-      seenLapIds.add(idLap.toLowerCase());
-
+      if (!nama) return;
+      const isPresent = r.keberadaan === true || String(r.keberadaan || r["KEBERADAAN DI RUANGAN"] || "").trim().toUpperCase() === "TRUE";
       const isReady = (r.laptop || r.LAPTOP) !== "TIDAK AMAN";
       const hasCharger = (r.charger || r.CHARGER) === "ADA";
-      const catatan = r.keterangan || r.KETERANGAN || "";
+      const nis = String(r.nis || r.NIS || idx + 1).trim();
+      const idLap = `LP-${nis || nama.replace(/\s+/g, "").substring(0, 8)}`;
 
-      allLaptopsInRoom.push({
+      studentMap[nama.toLowerCase()] = {
+        student: r,
         idLaptop: idLap,
         labelLaptop: `Laptop Mandiri (${r.kelas || r.KELAS || "-"})`,
         pemilikLaptop: nama,
         nis: nis,
         kelas: r.kelas || r.KELAS || "",
         ruangKelas: String(r.ruangKelas || r["RUANG KELAS"] || "").trim(),
-        ruangLaptop: rl,
+        ruangLaptop: String(r.ruangLaptop || r["RUANG LAPTOP"] || "").trim(),
+        isPresent: isPresent,
         isReady: isReady,
         hasCharger: hasCharger,
-        catatan: catatan
-      });
+        catatan: r.keterangan || r.KETERANGAN || ""
+      };
     });
-
-    // Tambahkan juga unit cadangan inventaris sekolah di ruangan ini
-    const extraSpares = getRoomBackupsStore(activeDate, activeSession, roomName);
-    extraSpares.forEach((extra) => {
-      if (extra && !seenLapIds.has(String(extra.idLaptop).toLowerCase())) {
-        seenLapIds.add(String(extra.idLaptop).toLowerCase());
-        allLaptopsInRoom.push(extra);
-      }
-    });
-
-    // Filter HANYA laptop yang AMAN (laptop TIDAK AMAN tidak boleh diikutkan plot otomatis)
-    const safeLaptops = allLaptopsInRoom.filter(
-      (l) => l.isReady !== false && String(l.laptop || "AMAN").toUpperCase() !== "TIDAK AMAN"
-    );
 
     const roomAssignments = getEffectiveRoomAssignments(activeDate, activeSession, roomName);
     const sesKey = activeSession === "Sesi 1" ? "sesi1" : (activeSession === "Sesi 2" ? "sesi2" : "sesi3");
 
-    // Urutan sesi untuk fallback peminjaman laptop pada nomor meja yang sama
+    // Urutan sesi untuk fallback peminjaman laptop HANYA PADA NOMOR MEJA YANG SAMA
     let fallbackSessions = [];
     if (activeSession === "Sesi 1") {
-      fallbackSessions = [
-        { key: "sesi2", label: "Sesi 2" },
-        { key: "sesi3", label: "Sesi 3" }
-      ];
+      fallbackSessions = ["sesi2", "sesi3"];
     } else if (activeSession === "Sesi 2") {
-      fallbackSessions = [
-        { key: "sesi1", label: "Sesi 1" },
-        { key: "sesi3", label: "Sesi 3" }
-      ];
+      fallbackSessions = ["sesi1", "sesi3"];
     } else {
-      fallbackSessions = [
-        { key: "sesi2", label: "Sesi 2" },
-        { key: "sesi1", label: "Sesi 1" }
-      ];
+      fallbackSessions = ["sesi1", "sesi2"];
     }
 
     const plannedAssignments = {};
@@ -994,48 +991,42 @@ function getRoomBackupsStore(date, session, room) {
     let plottedFallback = 0;
     let replacedCount = 0;
 
-    // TAHAP 1: Cari laptop milik siswa sesi aktif di meja masing-masing (Primary Owner)
+    // TAHAP 1: Pasang laptop milik siswa sesi aktif di meja masing-masing (PEMILIK ASLI / PRIMARY OWNER)
     for (let d = 1; d <= roomConf.totalDesks; d++) {
       const studentName = (roomConf.roster && roomConf.roster[d] && roomConf.roster[d][sesKey]) || "";
       if (!studentName) continue;
 
-      const targetLaptop = safeLaptops.find(
-        (l) => l.pemilikLaptop && l.pemilikLaptop.trim().toLowerCase() === studentName.trim().toLowerCase() && !claimedLaptopIds.has(l.idLaptop.toLowerCase())
-      );
-
-      if (targetLaptop) {
+      const pData = studentMap[studentName.toLowerCase()];
+      if (pData && pData.isPresent && pData.isReady && !claimedLaptopIds.has(pData.idLaptop.toLowerCase())) {
         plannedAssignments[d] = {
-          laptop: targetLaptop,
+          laptop: pData,
           isPrimary: true,
-          catatan: targetLaptop.catatan || ""
+          catatan: pData.catatan || ""
         };
-        claimedLaptopIds.add(targetLaptop.idLaptop.toLowerCase());
+        claimedLaptopIds.add(pData.idLaptop.toLowerCase());
         plottedPrimary++;
       }
     }
 
-    // TAHAP 2: Jika ada meja yang belum mendapatkan laptop (siswa tidak mengumpulkan laptop / rusak),
-    // pinjam laptop milik siswa sesi sebelumnya atau sesudahnya di meja yang sama!
+    // TAHAP 2: Jika meja belum terisi (pemilik belum kumpul laptop / laptop rusak),
+    // pinjam laptop milik siswa sesi lain PADA NOMOR MEJA YANG SAMA! (TIDAK MENGACAK DARI MEJA LAIN)
     for (let d = 1; d <= roomConf.totalDesks; d++) {
-      if (plannedAssignments[d]) continue; // Meja ini sudah berhasil mendapatkan laptop pemiliknya
+      if (plannedAssignments[d]) continue; // Meja ini sudah berhasil mendapatkan laptop pemilik aslinya
 
-      for (const fb of fallbackSessions) {
-        const candidateName = (roomConf.roster && roomConf.roster[d] && roomConf.roster[d][fb.key]) || "";
+      for (const fbKey of fallbackSessions) {
+        const candidateName = (roomConf.roster && roomConf.roster[d] && roomConf.roster[d][fbKey]) || "";
         if (!candidateName) continue;
 
-        const fallbackLaptop = safeLaptops.find(
-          (l) => l.pemilikLaptop && l.pemilikLaptop.trim().toLowerCase() === candidateName.trim().toLowerCase() && !claimedLaptopIds.has(l.idLaptop.toLowerCase())
-        );
-
-        if (fallbackLaptop) {
+        const fbData = studentMap[candidateName.toLowerCase()];
+        if (fbData && fbData.isPresent && fbData.isReady && !claimedLaptopIds.has(fbData.idLaptop.toLowerCase())) {
           plannedAssignments[d] = {
-            laptop: fallbackLaptop,
+            laptop: fbData,
             isPrimary: false,
-            catatan: fallbackLaptop.catatan || ""
+            catatan: fbData.catatan || ""
           };
-          claimedLaptopIds.add(fallbackLaptop.idLaptop.toLowerCase());
+          claimedLaptopIds.add(fbData.idLaptop.toLowerCase());
           plottedFallback++;
-          break; // Meja ini sudah berhasil meminjam laptop
+          break; // Berhasil meminjam laptop dari sesi lain di meja yang sama
         }
       }
     }
@@ -1046,8 +1037,6 @@ function getRoomBackupsStore(date, session, room) {
       const plan = plannedAssignments[d];
 
       if (plan) {
-        // Jika meja sebelumnya berisi laptop lain yang berbeda (misal peninggalan sesi 1),
-        // lepaskan hak laptop lama tersebut agar kembali menjadi cadangan sesi ini
         if (cur && cur.idLaptop && cur.pemilikLaptop && cur.pemilikLaptop.toLowerCase() !== plan.laptop.pemilikLaptop.toLowerCase()) {
           clearRekapDeskPosition(activeDate, cur.pemilikLaptop, activeSession);
           const oldLap = laptopPool.find((l) => l.idLaptop === cur.idLaptop);
@@ -1058,42 +1047,40 @@ function getRoomBackupsStore(date, session, room) {
           replacedCount++;
         }
 
-        // Pasangkan laptop yang sesuai
-        assignBackupLaptopToDesk(roomName, d, plan.laptop.idLaptop, {
+        // Pasangkan laptop yang sesuai langsung via assignLaptopToDesk
+        assignLaptopToDesk(roomName, d, plan.laptop.idLaptop, {
           isReady: plan.laptop.isReady,
           hasCharger: plan.laptop.hasCharger,
-          catatan: plan.catatan
+          catatan: plan.catatan,
+          silent: true
         });
       } else {
-        // Jika meja tidak memperoleh laptop yang aman (atau laptop lama diklaim meja lain / tidak aman),
-        // lepaskan dari meja agar meja kosong dan laptop tidak aman masuk cadangan
+        // Jika meja tidak memperoleh laptop pemilik maupun pinjaman dari meja yang sama,
+        // kosongkan meja agar siap menerima unit cadangan sekolah
         if (cur && cur.idLaptop && !cur.unassigned) {
-          if (claimedLaptopIds.has(cur.idLaptop.toLowerCase()) || cur.isReady === false) {
-            unassignLaptopFromDesk(roomName, d);
+          const isStudentLaptop = cur.idLaptop.startsWith("LP-");
+          const isInvalidStudent = isStudentLaptop && (!studentMap[cur.pemilikLaptop?.toLowerCase()]?.isPresent || claimedLaptopIds.has(cur.idLaptop.toLowerCase()) || cur.isReady === false);
+          if (isInvalidStudent) {
+            unassignLaptopFromDesk(roomName, d, true);
           }
         }
       }
     }
 
+    renderActiveRoom();
+    renderLaptopPool();
+    if (currentTab === "tabel-laptop") renderRekapLaptopTable();
+
     const totalPlotted = plottedPrimary + plottedFallback;
-    const remainingSpares = getEffectiveRoomBackups(activeDate, activeSession, roomName).length;
-    const skippedUnsafe = allLaptopsInRoom.length - safeLaptops.length;
 
     if (totalPlotted > 0) {
-      let msg = `${totalPlotted} meja di ${roomName} berhasil diplot (${plottedPrimary} laptop sendiri, ${plottedFallback} pinjam sesi sebelum/sesudahnya)!`;
+      let msg = `${totalPlotted} meja di ${roomName} berhasil diplot (${plottedPrimary} laptop pemilik asli sesi ini, ${plottedFallback} pinjam sesama meja)!`;
       if (replacedCount > 0) {
         msg += ` (${replacedCount} meja disesuaikan dengan pemilik sesi ini)`;
       }
-      if (skippedUnsafe > 0) {
-        msg += ` [${skippedUnsafe} laptop TIDAK AMAN tetap di cadangan]`;
-      }
       showToast(msg, "success");
     } else {
-      if (skippedUnsafe > 0) {
-        showToast(`Semua meja sudah terisi atau laptop yang tersedia berstatus TIDAK AMAN (${skippedUnsafe} unit dilewati).`, "warning");
-      } else {
-        showToast(`Semua meja yang sesuai jadwal sudah terisi atau belum ada laptop yang tersedia di ${roomName}.`, "warning");
-      }
+      showToast(`Semua meja yang sesuai jadwal sudah terisi atau belum ada laptop yang tersedia di ${roomName}.`, "warning");
     }
   }
 
@@ -2004,16 +1991,20 @@ function getRoomBackupsStore(date, session, room) {
     saveAssignments();
     saveRekapLaptopsByDate();
     saveLaptopPool();
-    renderActiveRoom();
-    renderLaptopPool();
-    if (currentTab === "tabel-laptop") renderRekapLaptopTable();
+    if (!customDetails || !customDetails.silent) {
+      renderActiveRoom();
+      renderLaptopPool();
+      if (currentTab === "tabel-laptop") renderRekapLaptopTable();
+    }
 
     syncAssignmentToGAS(activeDate, activeSession, roomName, deskNo);
 
-    if (hasMovedRoom) {
-      showToast(`Laptop ${laptop.pemilikLaptop} dipindahkan dari ${oldRoom} ke ${roomName} Meja ${deskNo} (Ruang laptop otomatis diubah ke ${targetRCode})`, "success");
-    } else {
-      showToast(`Laptop ${laptop.pemilikLaptop} dipasang ke ${roomName} Meja ${deskNo} (${activeDate} ${activeSession})`, "success");
+    if (!customDetails || !customDetails.silent) {
+      if (hasMovedRoom) {
+        showToast(`Laptop ${laptop.pemilikLaptop} dipindahkan dari ${oldRoom} ke ${roomName} Meja ${deskNo} (Ruang laptop otomatis diubah ke ${targetRCode})`, "success");
+      } else {
+        showToast(`Laptop ${laptop.pemilikLaptop} dipasang ke ${roomName} Meja ${deskNo} (${activeDate} ${activeSession})`, "success");
+      }
     }
   }
 
@@ -2042,7 +2033,7 @@ function getRoomBackupsStore(date, session, room) {
     });
   }
 
-  function unassignLaptopFromDesk(roomName, deskNo) {
+  function unassignLaptopFromDesk(roomName, deskNo, silent = false) {
     const roomAssignments = getEffectiveRoomAssignments(activeDate, activeSession, roomName);
     if (!roomAssignments || !roomAssignments[deskNo]) return;
 
@@ -2066,12 +2057,16 @@ function getRoomBackupsStore(date, session, room) {
 
     saveAssignments();
     saveLaptopPool();
-    renderActiveRoom();
-    renderLaptopPool();
-    if (currentTab === "tabel-laptop") renderRekapLaptopTable();
+    if (!silent) {
+      renderActiveRoom();
+      renderLaptopPool();
+      if (currentTab === "tabel-laptop") renderRekapLaptopTable();
+    }
 
     syncAssignmentToGAS(activeDate, activeSession, roomName, deskNo, true, pemilik, idLaptop);
-    showToast(`Laptop ${idLaptop || "meja"} dilepas dari Meja ${deskNo}`, "info");
+    if (!silent) {
+      showToast(`Laptop ${idLaptop || "meja"} dilepas dari Meja ${deskNo}`, "info");
+    }
   }
 
   function moveLaptopBetweenDesks(fromRoom, fromDesk, toRoom, toDesk) {
@@ -2448,7 +2443,8 @@ function getRoomBackupsStore(date, session, room) {
           const batch = [];
           for (let i = 0; i < Math.min(offlineQueue.length, 30); i++) {
             if (offlineQueue[i].action === "updateAssignment") {
-              batch.push(offlineQueue[i]);
+              const { _retryCount, _createdAt, ...cleanItem } = offlineQueue[i];
+              batch.push(cleanItem);
             } else {
               break;
             }
@@ -2463,34 +2459,60 @@ function getRoomBackupsStore(date, session, room) {
         }
 
         if (!postBody) {
-          postBody = offlineQueue[0];
+          const { _retryCount, _createdAt, ...cleanItem } = offlineQueue[0];
+          postBody = cleanItem;
           itemsConsumed = 1;
         }
 
-        const res = await fetch(gasUrl, {
-          method: "POST",
-          headers: { "Content-Type": "text/plain;charset=utf-8" },
-          body: JSON.stringify(postBody)
-        });
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 12000);
+        let res, text, json = null;
 
-        const text = await res.text();
-        let json = null;
         try {
-          json = JSON.parse(text);
-        } catch (e) {
-          json = null;
+          res = await fetch(gasUrl, {
+            method: "POST",
+            headers: { "Content-Type": "text/plain;charset=utf-8" },
+            body: JSON.stringify(postBody),
+            signal: controller.signal
+          });
+          text = await res.text();
+          try {
+            json = JSON.parse(text);
+          } catch (e) {
+            json = null;
+          }
+        } finally {
+          clearTimeout(timeoutId);
         }
 
         if (!res.ok || (json && json.success === false)) {
-          console.warn("GAS write locked or error:", (json && json.error) || text);
-          updateSyncPill("offline");
-          // Jadwalkan retry backoff tanpa menghapus antrian
-          setTimeout(() => {
-            if (offlineQueue.length > 0) flushOfflineQueue();
-          }, 3000);
-          return;
+          const errDetail = (json && json.error) || text || ("HTTP Error " + (res ? res.status : "unknown"));
+          console.warn("GAS write response error:", errDetail);
+
+          const isLockOrBusy = String(errDetail).toLowerCase().includes("lock") ||
+                               String(errDetail).toLowerCase().includes("sibuk") ||
+                               (res && (res.status === 429 || res.status === 503));
+
+          const currentRetries = (offlineQueue[0]._retryCount || 0) + 1;
+          offlineQueue[0]._retryCount = currentRetries;
+
+          if (isLockOrBusy && currentRetries < 4) {
+            updateSyncPill("offline");
+            setTimeout(() => {
+              if (offlineQueue.length > 0 && !isSyncing) flushOfflineQueue();
+            }, 2000 * currentRetries);
+            return;
+          }
+
+          // Lepaskan item yang gagal/ditolak agar tidak menjebak sistem dalam status offline permanen
+          console.warn(`Melepaskan ${itemsConsumed} antrian [${postBody.action}] karena penolakan server/maksimal retry:`, errDetail);
+          offlineQueue.splice(0, itemsConsumed);
+          saveOfflineQueue();
+          showToast(`Sinkronisasi data dilewati (${errDetail})`, "warning");
+          continue;
         }
 
+        // Berhasil dikirim ke GAS
         offlineQueue.splice(0, itemsConsumed);
         saveOfflineQueue();
       }
@@ -2498,11 +2520,22 @@ function getRoomBackupsStore(date, session, room) {
     } catch (err) {
       console.warn("GAS sync network error (queued):", err);
       updateSyncPill("offline");
+      if (offlineQueue.length > 0) {
+        offlineQueue[0]._retryCount = (offlineQueue[0]._retryCount || 0) + 1;
+        if (offlineQueue[0]._retryCount > 6) {
+          console.warn("Membuang antrian yang gagal kirim setelah 6x percobaan jaringan.");
+          offlineQueue.shift();
+          saveOfflineQueue();
+        }
+      }
       setTimeout(() => {
-        if (offlineQueue.length > 0) flushOfflineQueue();
+        if (offlineQueue.length > 0 && !isSyncing) flushOfflineQueue();
       }, 5000);
     } finally {
       isSyncing = false;
+      if (offlineQueue.length === 0) {
+        updateSyncPill("synced");
+      }
     }
   }
 
@@ -2520,9 +2553,13 @@ function getRoomBackupsStore(date, session, room) {
   async function pollRoomStateFromGAS() {
     // Jangan lakukan polling jika sedang ada proses pengiriman antrian lokal
     if (!gasUrl || isSyncing || offlineQueue.length > 0) return;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
     try {
-      const url = `${gasUrl}?action=getSyncState&tanggal=${encodeURIComponent(activeDate)}&sesi=all`;
-      const res = await fetch(url);
+      const url = `${gasUrl}?action=getSyncState&tanggal=${encodeURIComponent(activeDate)}&sesi=all&_t=${Date.now()}`;
+      const res = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (!res.ok) return;
       const json = await res.json();
 
       if (json && json.success) {
@@ -2728,13 +2765,34 @@ function getRoomBackupsStore(date, session, room) {
         }
 
         if (currentTab === "overview") renderRekapOverview();
+
+        if (!isSyncing && offlineQueue.length === 0) {
+          updateSyncPill("synced");
+        }
       }
     } catch (err) {
-      console.warn("Poll state sync error:", err);
+      clearTimeout(timeoutId);
+      if (err.name !== "AbortError") {
+        console.warn("Poll state sync error:", err);
+      }
+    }
+  }
+
+  function updateQueueBadge() {
+    const qBadge = document.getElementById("settings-queue-badge");
+    if (qBadge) {
+      const qLen = offlineQueue.length;
+      qBadge.textContent = `${qLen} Tertunda`;
+      if (qLen > 0) {
+        qBadge.className = "px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700 animate-pulse";
+      } else {
+        qBadge.className = "px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-200 text-slate-700";
+      }
     }
   }
 
   function updateSyncPill(state = null) {
+    updateQueueBadge();
     const pill = document.getElementById("sync-pill");
     const dot = document.getElementById("sync-dot");
     const text = document.getElementById("sync-text");
@@ -3255,7 +3313,10 @@ function getRoomBackupsStore(date, session, room) {
 
     // Settings Modal Events
     const modalSettings = document.getElementById("modal-settings");
-    document.getElementById("btn-settings").addEventListener("click", () => modalSettings.classList.remove("hidden"));
+    document.getElementById("btn-settings").addEventListener("click", () => {
+      updateQueueBadge();
+      modalSettings.classList.remove("hidden");
+    });
 
     const btnSyncPersiapan = document.getElementById("btn-sync-persiapan");
     if (btnSyncPersiapan) {
@@ -3358,6 +3419,66 @@ function getRoomBackupsStore(date, session, room) {
     }
     document.getElementById("btn-rekap-export").addEventListener("click", exportMasterCSV);
     document.getElementById("btn-rekap-table-export").addEventListener("click", exportMasterCSV);
+
+    const btnFlushQueue = document.getElementById("btn-flush-queue");
+    if (btnFlushQueue) {
+      btnFlushQueue.addEventListener("click", () => {
+        if (offlineQueue.length === 0) {
+          showToast("Tidak ada antrian sinkronisasi tertunda.", "info");
+          return;
+        }
+        showToast(`Mencoba mengirim ${offlineQueue.length} data tertunda...`, "info");
+        flushOfflineQueue();
+        updateQueueBadge();
+      });
+    }
+
+    const btnClearQueue = document.getElementById("btn-clear-queue");
+    if (btnClearQueue) {
+      btnClearQueue.addEventListener("click", () => {
+        if (offlineQueue.length === 0) {
+          showToast("Antrian sinkronisasi sudah kosong.", "info");
+          return;
+        }
+        if (confirm(`Apakah Anda yakin ingin menghapus ${offlineQueue.length} antrian yang tertunda?`)) {
+          offlineQueue = [];
+          saveOfflineQueue();
+          updateSyncPill("synced");
+          updateQueueBadge();
+          showToast("Antrian tertunda berhasil dibersihkan.", "success");
+        }
+      });
+    }
+
+    // Sync pill click to retry / manual sync
+    const syncPillEl = document.getElementById("sync-pill");
+    if (syncPillEl) {
+      syncPillEl.style.cursor = "pointer";
+      syncPillEl.title = "Klik untuk memeriksa koneksi atau mengirim antrian tertunda";
+      syncPillEl.addEventListener("click", () => {
+        if (offlineQueue.length > 0) {
+          showToast(`Mengirim ulang ${offlineQueue.length} antrian tertunda...`, "info");
+          flushOfflineQueue();
+        } else if (gasUrl) {
+          showToast("Memperbarui status realtime dari Sheets...", "info");
+          pollRoomStateFromGAS();
+        } else {
+          modalSettings.classList.remove("hidden");
+        }
+      });
+    }
+
+    // Page visibility / focus resume
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") {
+        if (offlineQueue.length > 0) flushOfflineQueue();
+        if (gasUrl) pollRoomStateFromGAS();
+      }
+    });
+    window.addEventListener("focus", () => {
+      if (offlineQueue.length > 0) flushOfflineQueue();
+      if (gasUrl) pollRoomStateFromGAS();
+    });
 
     window.addEventListener("online", () => {
       showToast("Koneksi online aktif kembali. Menyinkronkan...", "info");
