@@ -247,11 +247,6 @@ function handleUpdateRekapRow(ss, payload) {
   const ruangLaptop = String(payload.ruangLaptop || "").trim();
   const sesi1 = payload.sesi1 !== undefined ? String(payload.sesi1) : "";
   const sesi2 = payload.sesi2 !== undefined ? String(payload.sesi2) : "";
-  const sesi3 = payload.sesi3 !== undefined ? String(payload.sesi3) : "";
-  const keberadaan = payload.keberadaan === true || payload.keberadaan === "true" || payload.keberadaan === 1 || payload.keberadaan === "TRUE";
-  const charger = String(payload.charger || "ADA").toUpperCase();
-  const laptopStatus = String(payload.laptopStatus || payload.laptop || "AMAN").toUpperCase();
-
   if (!nama && !nis) {
     return { success: false, error: "Missing required identifier: NIS or Nama" };
   }
@@ -262,11 +257,26 @@ function handleUpdateRekapRow(ss, payload) {
   for (let i = 1; i < values.length; i++) {
     const rowNis = String(values[i][0]).trim();
     const rowNama = String(values[i][1]).trim();
-    if ((nis && rowNis === nis) || (!nis && rowNama.toLowerCase() === nama.toLowerCase())) {
+    if ((nis && rowNis && rowNis === nis) || (nama && rowNama.toLowerCase() === nama.toLowerCase())) {
       targetRow = i + 1;
       break;
     }
   }
+
+  const existingKeberadaan = targetRow > 0 ? (String(values[targetRow - 1][8]).trim().toUpperCase() === "TRUE") : false;
+  const finalKeberadaan = payload.keberadaan !== undefined
+    ? (payload.keberadaan === true || payload.keberadaan === "true" || payload.keberadaan === 1 || payload.keberadaan === "TRUE")
+    : existingKeberadaan;
+
+  const existingCharger = targetRow > 0 ? (String(values[targetRow - 1][9] || "").trim().toUpperCase() || "ADA") : "ADA";
+  const finalCharger = (payload.charger !== undefined)
+    ? (String(payload.charger).toUpperCase().indexOf("TIDAK") !== -1 ? "TIDAK ADA" : "ADA")
+    : existingCharger;
+
+  const existingLaptop = targetRow > 0 ? (String(values[targetRow - 1][10] || "").trim().toUpperCase() || "AMAN") : "AMAN";
+  const finalLaptop = (payload.laptopStatus !== undefined || payload.laptop !== undefined)
+    ? (String(payload.laptopStatus || payload.laptop).toUpperCase().indexOf("TIDAK") !== -1 ? "TIDAK AMAN" : "AMAN")
+    : existingLaptop;
 
   const existingKeterangan = targetRow > 0 ? String(values[targetRow - 1][11] || "").trim() : "";
   let finalKeterangan = existingKeterangan;
@@ -282,12 +292,12 @@ function handleUpdateRekapRow(ss, payload) {
     kelas || (targetRow > 0 ? values[targetRow - 1][2] : ""),
     ruangKelas || (targetRow > 0 ? values[targetRow - 1][3] : ""),
     ruangLaptop || (targetRow > 0 ? values[targetRow - 1][4] : ""),
-    sesi1 || (targetRow > 0 ? values[targetRow - 1][5] : ""),
-    sesi2 || (targetRow > 0 ? values[targetRow - 1][6] : ""),
-    sesi3 || (targetRow > 0 ? values[targetRow - 1][7] : ""),
-    keberadaan ? true : false,
-    charger.indexOf("TIDAK") !== -1 ? "TIDAK ADA" : "ADA",
-    laptopStatus.indexOf("TIDAK") !== -1 ? "TIDAK AMAN" : "AMAN",
+    payload.sesi1 !== undefined ? String(payload.sesi1) : (targetRow > 0 ? values[targetRow - 1][5] : ""),
+    payload.sesi2 !== undefined ? String(payload.sesi2) : (targetRow > 0 ? values[targetRow - 1][6] : ""),
+    payload.sesi3 !== undefined ? String(payload.sesi3) : (targetRow > 0 ? values[targetRow - 1][7] : ""),
+    finalKeberadaan ? true : false,
+    finalCharger,
+    finalLaptop,
     finalKeterangan,
     now
   ];
@@ -419,7 +429,8 @@ function handleUpdateAssignment(ss, payload) {
           if (colKeberadaan > 0) {
             for (let r = 1; r < pValues.length; r++) {
               if (String(pValues[r][colNama - 1] || "").trim().toLowerCase() === pemilikLaptop.trim().toLowerCase()) {
-                sPersiapan.getRange(r + 1, colKeberadaan).setValue("TRUE");
+                sPersiapan.getRange(r + 1, colKeberadaan).setValue(true);
+                if (pStudent) pStudent["KEBERADAAN DI RUANGAN"] = "TRUE";
                 break;
               }
             }
@@ -492,15 +503,21 @@ function handleUpdateAssignment(ss, payload) {
     const rekapUpdate = {
       tanggal: tanggal,
       nama: targetPemilik,
-      ruangLaptop: rCode, // Tetap berada di ruangan ini (sebagai cadangan ruangan)
-      charger: hasCharger ? "ADA" : "TIDAK ADA",
-      laptopStatus: isReady ? "AMAN" : "TIDAK AMAN"
+      ruangLaptop: rCode // Tetap berada di ruangan ini (sebagai cadangan ruangan)
     };
 
-    if (payload.keberadaan !== undefined) {
-      rekapUpdate.keberadaan = payload.keberadaan === true || payload.keberadaan === "true" || payload.keberadaan === 1;
-    } else if (!isUnassign) {
-      rekapUpdate.keberadaan = true;
+    if (!isUnassign) {
+      rekapUpdate.charger = hasCharger ? "ADA" : "TIDAK ADA";
+      rekapUpdate.laptopStatus = isReady ? "AMAN" : "TIDAK AMAN";
+      if (payload.keberadaan !== undefined) {
+        rekapUpdate.keberadaan = payload.keberadaan === true || payload.keberadaan === "true" || payload.keberadaan === 1;
+      } else {
+        rekapUpdate.keberadaan = true;
+      }
+    } else {
+      if (payload.keberadaan !== undefined) {
+        rekapUpdate.keberadaan = payload.keberadaan === true || payload.keberadaan === "true" || payload.keberadaan === 1;
+      }
     }
 
     if (catatan) {
@@ -641,10 +658,10 @@ function handleSyncFromPersiapan(ss, targetSheetName) {
       s1,
       s2,
       s3,
-      isPresent ? "TRUE" : "FALSE",
+      isPresent ? true : false,
       String(p.CHARGER || "").trim().toUpperCase(),
       String(p.LAPTOP || "").trim().toUpperCase(),
-      String(p.KET || "").trim(),
+      String(p.KET || p.KETERANGAN || p.Catatan || "").trim(),
       now
     ]);
   });

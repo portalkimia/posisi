@@ -2822,7 +2822,7 @@ function getRoomBackupsStore(date, session, room) {
                     Object.keys(rMap).forEach((dNo) => {
                       const a = rMap[dNo];
                       if (a && a.pemilikLaptop && uncollectedOwners.has(a.pemilikLaptop.trim().toLowerCase())) {
-                        delete rMap[dNo];
+                        rMap[dNo] = { unassigned: true, lastUpdated: new Date().toISOString() };
                         activeRoomChanged = true;
                       }
                     });
