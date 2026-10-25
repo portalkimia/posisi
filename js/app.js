@@ -2468,7 +2468,8 @@ function getRoomBackupsStore(date, session, room) {
       keberadaan: item.keberadaan ? true : false,
       charger: item.charger || "ADA",
       laptopStatus: item.laptop || "AMAN",
-      keterangan: item.keterangan || ""
+      keterangan: item.keterangan || "",
+      forceKeterangan: true
     };
 
     offlineQueue.push(payload);
