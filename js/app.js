@@ -3367,10 +3367,11 @@ function getRoomBackupsStore(date, session, room) {
 
   function updateSessionPills() {
     document.querySelectorAll(".session-btn").forEach((b) => {
-      if (b.dataset.session === activeSession) {
-        b.className = "session-btn px-3 py-1 rounded-lg bg-indigo-600 text-white shadow-sm font-semibold";
+      const isActive = b.dataset.session === activeSession;
+      if (isActive) {
+        b.className = "session-btn flex-1 py-1.5 px-3 rounded-lg bg-indigo-600 text-white font-bold text-xs shadow-xs transition-all duration-150 flex items-center justify-center gap-1.5 cursor-pointer";
       } else {
-        b.className = "session-btn px-3 py-1 rounded-lg text-slate-600 hover:text-slate-900";
+        b.className = "session-btn flex-1 py-1.5 px-3 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 font-semibold text-xs transition-all duration-150 flex items-center justify-center gap-1.5 cursor-pointer";
       }
     });
   }
