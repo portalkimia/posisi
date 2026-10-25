@@ -887,11 +887,35 @@
     </div>
   </div>
 
+  <!-- MODAL PICK DESK (PILIH MEJA TUJUAN) -->
+  <div id="modal-pick-desk" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-slate-100 flex flex-col gap-4 max-h-[90dvh] overflow-hidden">
+      <div class="flex items-start justify-between border-b border-slate-100 pb-3">
+        <div>
+          <span id="modal-pick-desk-room-badge" class="text-xs font-bold uppercase tracking-wider text-indigo-600"></span>
+          <h3 class="text-lg font-bold text-slate-900">Pilih Meja Tujuan</h3>
+        </div>
+        <button id="modal-pick-desk-close" class="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+      <div id="modal-pick-desk-laptop-info" class="bg-slate-50 rounded-xl p-3 border border-slate-200 text-xs flex items-center gap-2 flex-wrap"></div>
+      <div class="flex items-center gap-1 bg-slate-100 p-0.5 rounded-xl text-xs font-semibold w-max">
+        <button id="filter-pick-empty-only" class="px-2.5 py-1 rounded-md bg-white text-indigo-700 shadow-2xs font-bold text-xs transition">Meja Kosong</button>
+        <button id="filter-pick-all" class="px-2.5 py-1 rounded-md text-slate-600 hover:text-slate-900 font-semibold text-xs transition">Semua Meja</button>
+      </div>
+      <div id="modal-pick-desk-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-2 overflow-y-auto pr-1"></div>
+      <div class="flex items-center justify-end pt-2 border-t border-slate-100">
+        <button type="button" id="modal-pick-desk-cancel" class="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-xl font-semibold text-xs">Batal</button>
+      </div>
+    </div>
+  </div>
+
   <!-- TOAST NOTIFICATION CONTAINER -->
   <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
 
   <!-- LOAD STATIC DATA & APP SCRIPTS -->
   <script src="data/roomsData.js?v=20261025_004"></script>
-  <script src="js/app.js?v=20261025_013"></script>
+  <script src="js/app.js?v=20261025_014"></script>
 </body>
 </html>

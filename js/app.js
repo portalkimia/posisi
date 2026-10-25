@@ -80,7 +80,7 @@
 
   // --- LOCAL STATE LOADING & AUTO SEEDING ---
   const CACHE_VERSION_KEY = "tka_cache_version";
-  const CURRENT_CACHE_VERSION = "20261025_013";
+  const CURRENT_CACHE_VERSION = "20261025_014";
 
   function loadLocalState() {
     const savedVersion = localStorage.getItem(CACHE_VERSION_KEY);
@@ -2118,7 +2118,10 @@ function getRoomBackupsStore(date, session, room) {
 
     selectedLaptopForPicker = idLaptop;
     const modal = document.getElementById("modal-pick-desk");
-    if (!modal) return;
+    if (!modal) {
+      showToast("Modal pilih meja belum tersedia.", "error");
+      return;
+    }
 
     // Find laptop details
     let laptop = laptopPool.find((l) => l.idLaptop === idLaptop);
@@ -2240,6 +2243,42 @@ function getRoomBackupsStore(date, session, room) {
           <i data-lucide="check-circle" class="w-6 h-6 text-emerald-500"></i>
           <span>Semua meja di ${activeRoom} (${activeSession}) sudah terisi. Klik tab "Semua Meja" di atas jika ingin menukar atau mengganti meja terisi.</span>
         </div>
+      `;
+    }
+
+    // Pastikan modal-pick-desk-laptop-info sudah terisi
+    const infoEl = document.getElementById("modal-pick-desk-laptop-info");
+    if (infoEl && selectedLaptopForPicker) {
+      const idLaptop = selectedLaptopForPicker;
+      let laptop = laptopPool.find((l) => l.idLaptop === idLaptop);
+      if (!laptop) {
+        const backups = getEffectiveRoomBackups(activeDate, activeSession, activeRoom);
+        laptop = backups.find((b) => b.idLaptop === idLaptop);
+      }
+      if (!laptop) {
+        const dateList = rekapLaptopsByDate[activeDate] || [];
+        const r = dateList.find((item) => (item.idLaptop && item.idLaptop === idLaptop) || item.nis === idLaptop || `LP-${item.nis}` === idLaptop);
+        if (r) {
+          laptop = {
+            idLaptop: idLaptop,
+            labelLaptop: r.nama,
+            pemilikLaptop: r.nama,
+            isReady: r.laptop !== "TIDAK AMAN",
+            hasCharger: r.charger !== "TIDAK ADA",
+            ruangLaptop: r.ruangLaptop
+          };
+        }
+      }
+      const owner = laptop ? (laptop.pemilikLaptop || laptop.labelLaptop) : idLaptop;
+      const isReady = laptop ? laptop.isReady : true;
+      const rLoc = laptop ? (laptop.ruangLaptop || activeRoom) : activeRoom;
+      infoEl.innerHTML = `
+        <span class="font-bold text-slate-900">${owner}</span>
+        <span class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-indigo-50 text-indigo-700 border border-indigo-200">${idLaptop}</span>
+        <span class="px-1.5 py-0.5 rounded text-[10px] font-bold ${isReady ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-amber-50 text-amber-700 border border-amber-200"}">
+          ${isReady ? "✅ AMAN" : "⚠️ TIDAK AMAN"}
+        </span>
+        <span class="text-[10px] text-slate-500 font-medium">📍 Lokasi: ${rLoc}</span>
       `;
     }
 
